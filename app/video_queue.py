@@ -1,0 +1,93 @@
+"""
+Video Queue Widget
+"""
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QListWidget, QListWidgetItem
+from PySide6.QtCore import Qt
+
+
+class VideoQueue(QWidget):
+    """Widget for managing the video import queue."""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setup_ui()
+    
+    def setup_ui(self):
+        """Set up the video queue UI."""
+        layout = QVBoxLayout(self)
+        
+        # Title
+        title = QLabel("Video Queue")
+        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #ffffff;")
+        layout.addWidget(title)
+        
+        # Video list
+        self.video_list = QListWidget()
+        self.video_list.setStyleSheet("""
+            QListWidget {
+                background-color: #2d2d2d;
+                border: 1px solid #3a3a3a;
+                border-radius: 8px;
+                padding: 8px;
+            }
+            QListWidget::item {
+                color: #e0e0e0;
+                padding: 8px;
+                border-radius: 4px;
+            }
+            QListWidget::item:hover {
+                background-color: #3a3a3a;
+            }
+            QListWidget::item:selected {
+                background-color: #0078d4;
+            }
+        """)
+        layout.addWidget(self.video_list)
+        
+        # Buttons
+        button_layout = QVBoxLayout()
+        
+        self.add_videos_button = QPushButton("Add Videos")
+        self.add_videos_button.setStyleSheet("""
+            QPushButton {
+                background-color: #0078d4;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 10px;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #1084d8;
+            }
+            QPushButton:pressed {
+                background-color: #006cbd;
+            }
+        """)
+        button_layout.addWidget(self.add_videos_button)
+        
+        self.clear_queue_button = QPushButton("Clear Queue")
+        self.clear_queue_button.setStyleSheet("""
+            QPushButton {
+                background-color: #3a3a3a;
+                color: #e0e0e0;
+                border: none;
+                border-radius: 6px;
+                padding: 10px;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #4a4a4a;
+            }
+            QPushButton:pressed {
+                background-color: #2a2a2a;
+            }
+        """)
+        button_layout.addWidget(self.clear_queue_button)
+        
+        layout.addLayout(button_layout)
+    
+    def connect_signals(self, add_handler, clear_handler):
+        """Connect button signals to handlers."""
+        self.add_videos_button.clicked.connect(add_handler)
+        self.clear_queue_button.clicked.connect(clear_handler)
