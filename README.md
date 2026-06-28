@@ -37,8 +37,13 @@ ReelBatch Editor automates this process by letting you:
 
 ## Roadmap Summary
 
-### Phase 1: MVP (Current)
+### Phase 1: MVP (In Progress)
 Windows desktop batch editor with rectangle selection and three processing modes.
+- **1.1 Project Setup:** ✅ Complete
+- **1.2 Core UI:** ✅ Complete  
+- **1.3 Video Processing:** Next
+- **1.4 Export Features:** Pending
+- **1.5 Polish:** Pending
 
 ### Phase 2: GPU Acceleration
 Add NVIDIA NVENC support for faster exports with automatic CPU fallback.
@@ -59,16 +64,18 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed roadmap.
 
 ## Current Status
 
-**Stage:** Project initialized, MVP planning in progress.
+**Stage:** Phase 2 complete - UI skeleton implemented and functional.
 
 **Progress:**
 - [x] GitHub repository initialized
 - [x] Documentation structure created
-- [ ] Development environment setup
-- [ ] Core UI implementation
+- [x] Development environment setup
+- [x] Core UI implementation (PySide6 with dark theme)
 - [ ] Video processing integration
 - [ ] Export functionality
 - [ ] Windows EXE packaging
+
+The app now launches successfully with a modern dark UI layout. All UI controls are in place with placeholder handlers.
 
 See [docs/STATUS.md](docs/STATUS.md) for detailed task checklist.
 
@@ -125,14 +132,14 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture.
 ### Setup
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/reelbatch-editor.git
-cd reelbatch-editor
+git clone https://github.com/dhossain-ai/ReelBatch-Editor.git
+cd "ReelBatch Editor"
 
 # Create virtual environment
 python -m venv venv
 venv\Scripts\activate  # On Windows
 
-# Install dependencies (requirements.txt to be created)
+# Install dependencies
 pip install -r requirements.txt
 ```
 
@@ -140,6 +147,8 @@ pip install -r requirements.txt
 ```bash
 python main.py
 ```
+
+The app will launch with a modern dark UI showing the video queue, preview canvas, and edit settings panels.
 
 ## Building Windows EXE
 
