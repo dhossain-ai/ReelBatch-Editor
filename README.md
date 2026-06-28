@@ -48,10 +48,13 @@ Windows desktop batch editor with rectangle selection and three processing modes
 ### Phase 2: GPU Acceleration
 Add NVIDIA NVENC support for faster exports with automatic CPU fallback.
 
-### Phase 3: Advanced Selection
+### Phase 3: Video Import & Preview
+Import multiple videos, read metadata, and preview a frame from the selected clip.
+
+### Phase 4: Advanced Selection
 Add polygon and brush selection tools for more flexible masking.
 
-### Phase 4: Enhanced Features
+### Phase 5: Enhanced Features
 Presets system, batch operations, advanced export options.
 
 ### Phase 5: Cross-Platform
@@ -64,18 +67,18 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed roadmap.
 
 ## Current Status
 
-**Stage:** Phase 2 complete - UI skeleton implemented and functional.
+**Stage:** Phase 3 complete - video import, queue management, and preview frames implemented.
 
 **Progress:**
 - [x] GitHub repository initialized
 - [x] Documentation structure created
 - [x] Development environment setup
 - [x] Core UI implementation (PySide6 with dark theme)
-- [ ] Video processing integration
+- [x] Video import and preview integration
 - [ ] Export functionality
 - [ ] Windows EXE packaging
 
-The app now launches successfully with a modern dark UI layout. All UI controls are in place with placeholder handlers.
+The app now launches successfully with a modern dark UI layout. Videos can be imported in batches, metadata is shown in the queue, and the selected clip preview updates from OpenCV frames.
 
 See [docs/STATUS.md](docs/STATUS.md) for detailed task checklist.
 

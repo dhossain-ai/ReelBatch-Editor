@@ -2,7 +2,7 @@
 
 ## Current Stage
 
-Phase 2: UI skeleton complete. Ready for video processing implementation.
+Phase 3: Video import and preview complete. Ready for rectangle selection implementation.
 
 ## Phase 2 Completed (UI Skeleton)
 
@@ -20,6 +20,27 @@ Phase 2: UI skeleton complete. Ready for video processing implementation.
 - [x] Created comprehensive dark theme stylesheet
 - [x] Added placeholder signal handlers for all buttons
 - [x] App launches successfully from `python main.py`
+
+## Phase 3 Completed (Video Import & Preview)
+
+- [x] Added opencv-python dependency to requirements.txt
+- [x] Created core/video_probe.py with VideoInfo dataclass
+- [x] Implemented video metadata reading using OpenCV
+- [x] Implemented preview frame extraction (prefers 1 second, falls back to first frame)
+- [x] Added BGR to RGB conversion for Qt compatibility
+- [x] Updated video queue to display metadata (filename — resolution — duration)
+- [x] Added video selection signal to queue widget
+- [x] Implemented duplicate file detection in queue
+- [x] Updated preview canvas to display QImage with aspect ratio preservation
+- [x] Added preview scaling for different video resolutions
+- [x] Implemented video import via QFileDialog with multiple file selection
+- [x] Added support for .mp4, .mov, .mkv, .avi file formats
+- [x] Automatic preview of first imported video
+- [x] Preview updates when user selects different video in queue
+- [x] Clear queue resets preview canvas
+- [x] Added error handling for unreadable video files
+- [x] Added user-friendly error messages for import failures
+- [x] Status bar shows import results and selected video info
 
 ## Current Goal
 

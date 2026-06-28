@@ -67,23 +67,39 @@
 - [ ] Add encoder status indicator
 - [ ] Benchmark CPU vs GPU performance
 
-## Phase 3: Advanced Selection Tools
+## Phase 3: Video Import & Preview
+
+**Goal:** Import multiple videos, read metadata, and preview frames before selection work begins.
+
+### 3.1 Video Import
+- [x] Add QFileDialog-based multi-file import
+- [x] Support mp4, mov, mkv, and avi files
+- [x] Read video metadata with OpenCV
+- [x] Add duplicate-file detection in the queue
+
+### 3.2 Preview Display
+- [x] Extract a preview frame near 1 second
+- [x] Fall back to the first frame if needed
+- [x] Display preview frames in the canvas
+- [x] Keep placeholder text when no video is selected
+
+## Phase 4: Advanced Selection Tools
 
 **Goal:** Add polygon and brush selection for more flexible masking.
 
-### 3.1 Polygon Selection
+### 4.1 Polygon Selection
 - [ ] Add polygon drawing tool
 - [ ] Store polygon points as normalized coordinates
 - [ ] Generate FFmpeg polygon mask commands
 - [ ] Test polygon blur/overlay
 
-### 3.2 Brush Selection
+### 4.2 Brush Selection
 - [ ] Add brush/paint tool
 - [ ] Create mask from brush strokes
 - [ ] Generate FFmpeg mask commands
 - [ ] Test brush-based blur/overlay
 
-## Phase 4: Enhanced Features
+## Phase 5: Enhanced Features
 
 **Goal:** Add quality-of-life improvements and advanced capabilities.
 
