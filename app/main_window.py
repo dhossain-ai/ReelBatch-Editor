@@ -2,8 +2,9 @@
 Main Window for ReelBatch Editor
 """
 from __future__ import annotations
+from pathlib import Path
 from typing import List, Optional
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                                QLabel, QComboBox, QSlider, QPushButton, 
                                QProgressBar, QFileDialog, QMessageBox, QFrame,
@@ -11,6 +12,13 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
 from PySide6.QtGui import QAction
 from app.preview_canvas import PreviewCanvas
 from app.video_queue import VideoQueue
+from core.export_worker import BatchExportSummary, ExportWorker
+from core.ffmpeg_processor import (
+    ENCODER_OPTION_AUTO,
+    ENCODER_OPTION_CPU,
+    ENCODER_OPTION_NVIDIA,
+    FFmpegProcessor,
+)
 from core.selection import NormalizedSelection
 from core.video_probe import VideoInfo, read_video_metadata, extract_preview_frame
 
@@ -22,6 +30,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.current_video_info: Optional[VideoInfo] = None
         self.current_selection: Optional[NormalizedSelection] = None
+        self.output_directory: Optional[Path] = None
+        self.ffmpeg_processor = FFmpegProcessor()
+        self.export_thread: Optional[QThread] = None
+        self.export_worker: Optional[ExportWorker] = None
         self.setWindowTitle("ReelBatch Editor")
         self.setMinimumSize(1200, 800)
         self.setup_ui()
@@ -174,7 +186,7 @@ class MainWindow(QMainWindow):
         # Encoder Selection
         right_layout.addWidget(QLabel("Encoder:"))
         self.encoder_combo = QComboBox()
-        self.encoder_combo.addItems(["Auto - Prefer NVIDIA NVENC", "CPU - libx264", "NVIDIA - h264_nvenc"])
+        self.encoder_combo.addItems([ENCODER_OPTION_AUTO, ENCODER_OPTION_CPU, ENCODER_OPTION_NVIDIA])
         self.encoder_combo.setStyleSheet("""
             QComboBox {
                 background-color: #3a3a3a;
@@ -214,6 +226,11 @@ class MainWindow(QMainWindow):
             }
         """)
         right_layout.addWidget(self.output_button)
+
+        self.output_folder_label = QLabel("No output folder selected")
+        self.output_folder_label.setStyleSheet("color: #9a9a9a; font-size: 12px;")
+        self.output_folder_label.setWordWrap(True)
+        right_layout.addWidget(self.output_folder_label)
         
         # Preset Buttons
         preset_layout = QHBoxLayout()
@@ -436,6 +453,7 @@ class MainWindow(QMainWindow):
         self.current_video_info = None
         self.video_queue.clear_queue()
         self.preview_canvas.clear_preview()
+        self.progress_bar.setValue(0)
         self.status_label.setText("Queue cleared")
     
     def on_video_selected(self, video_info: Optional[VideoInfo]):
@@ -546,13 +564,18 @@ class MainWindow(QMainWindow):
     
     def on_select_logo(self):
         """Placeholder handler for logo selection."""
-        QMessageBox.information(self, "Select Logo", "Logo selection will be implemented in Phase 4")
+        QMessageBox.information(self, "Select Logo", "Logo selection will be implemented in Phase 6")
         self.status_label.setText("Select logo clicked")
     
     def on_select_output(self):
-        """Placeholder handler for output folder selection."""
-        QMessageBox.information(self, "Select Output", "Output folder selection will be implemented in Phase 4")
-        self.status_label.setText("Select output folder clicked")
+        """Select and store the output folder for batch exports."""
+        selected_directory = QFileDialog.getExistingDirectory(self, "Select Output Folder")
+        if not selected_directory:
+            return
+
+        self.output_directory = Path(selected_directory)
+        self.output_folder_label.setText(str(self.output_directory))
+        self.status_label.setText("Output folder selected")
     
     def on_save_preset(self):
         """Placeholder handler for save preset."""
@@ -561,10 +584,128 @@ class MainWindow(QMainWindow):
     
     def on_load_preset(self):
         """Placeholder handler for load preset."""
-        QMessageBox.information(self, "Load Preset", "Preset loading will be implemented in Phase 4")
+        QMessageBox.information(self, "Load Preset", "Preset loading will be implemented in a later phase")
         self.status_label.setText("Load preset clicked")
     
     def on_export(self):
-        """Placeholder handler for export button."""
-        QMessageBox.information(self, "Export", "Video export will be implemented in Phase 5")
-        self.status_label.setText("Export clicked")
+        """Validate inputs and start a background blur export."""
+        videos = self.video_queue.get_all_videos()
+        validation_error = self.validate_export_request(videos)
+        if validation_error:
+            QMessageBox.warning(self, "Export Error", validation_error)
+            self.status_label.setText("Export blocked")
+            return
+
+        if not self.ffmpeg_processor.is_ffmpeg_available():
+            message = (
+                "FFmpeg was not found on PATH. Install FFmpeg or add it to PATH, "
+                "then try exporting again."
+            )
+            QMessageBox.warning(self, "FFmpeg Not Found", message)
+            self.status_label.setText("FFmpeg not available")
+            return
+
+        encoder_availability = self.ffmpeg_processor.detect_available_encoders()
+        try:
+            encoder_plan = self.ffmpeg_processor.resolve_encoder_plan(
+                self.encoder_combo.currentText(),
+                encoder_availability,
+            )
+        except ValueError as exc:
+            QMessageBox.warning(self, "Encoder Error", str(exc))
+            self.status_label.setText("Encoder unavailable")
+            return
+
+        self.start_export(videos, encoder_plan)
+
+    def validate_export_request(self, videos: List[VideoInfo]) -> Optional[str]:
+        """Return a user-facing validation error for export, or None when ready."""
+        if not videos:
+            return "Import at least one video before exporting."
+
+        if self.output_directory is None:
+            return "Select an output folder before exporting."
+
+        if self.processing_mode.currentText() != "Blur selected area":
+            return "Only 'Blur selected area' export is available in this phase."
+
+        if self.current_selection is None:
+            return "Draw a valid rectangle selection before exporting."
+
+        return None
+
+    def start_export(self, videos: List[VideoInfo], encoder_plan) -> None:
+        """Create the worker thread and begin batch export."""
+        if self.output_directory is None or self.current_selection is None:
+            return
+
+        self.export_button.setEnabled(False)
+        self.progress_bar.setRange(0, len(videos))
+        self.progress_bar.setValue(0)
+        self.status_label.setText("Starting export...")
+
+        self.export_thread = QThread(self)
+        self.export_worker = ExportWorker(
+            videos=videos,
+            selection=self.current_selection,
+            output_directory=self.output_directory,
+            blur_strength=self.blur_slider.value(),
+            encoder_plan=encoder_plan,
+        )
+        self.export_worker.moveToThread(self.export_thread)
+        self.export_thread.started.connect(self.export_worker.run)
+        self.export_worker.progress_changed.connect(self.on_export_progress)
+        self.export_worker.status_changed.connect(self.status_label.setText)
+        self.export_worker.file_finished.connect(self.on_export_file_finished)
+        self.export_worker.finished.connect(self.on_export_finished)
+        self.export_worker.finished.connect(self.export_thread.quit)
+        self.export_worker.finished.connect(self.export_worker.deleteLater)
+        self.export_thread.finished.connect(self.export_thread.deleteLater)
+        self.export_thread.finished.connect(self.on_export_thread_finished)
+        self.export_thread.start()
+
+    def on_export_progress(self, completed: int, total: int) -> None:
+        """Update the progress bar with batch-level progress."""
+        self.progress_bar.setRange(0, max(total, 1))
+        self.progress_bar.setValue(completed)
+
+    def on_export_file_finished(self, result) -> None:
+        """Log per-file FFmpeg output for debugging and note fallbacks."""
+        print(f"Export result for {result.input_path.name}: success={result.success}, encoder={result.encoder_used}")
+        if result.log_text:
+            print(result.log_text)
+
+        if result.success and result.fallback_used:
+            self.status_label.setText(f"CPU fallback used for {result.input_path.name}")
+
+    def on_export_finished(self, summary: BatchExportSummary) -> None:
+        """Show a readable export summary when the batch completes."""
+        self.export_button.setEnabled(True)
+
+        summary_lines = [
+            f"Exported successfully: {summary.success_count}",
+            f"Failed: {summary.failure_count}",
+            f"Output folder: {summary.output_directory}",
+        ]
+        if summary.fallback_count:
+            summary_lines.append(f"CPU fallback used: {summary.fallback_count}")
+        if summary.failures:
+            summary_lines.append("")
+            summary_lines.append("Failed files:")
+            for file_name, error_message in summary.failures[:5]:
+                summary_lines.append(f"- {file_name}: {error_message}")
+            if len(summary.failures) > 5:
+                summary_lines.append(f"... and {len(summary.failures) - 5} more")
+
+        message = "\n".join(summary_lines)
+        if summary.failure_count:
+            QMessageBox.warning(self, "Export Completed With Errors", message)
+            self.status_label.setText("Export finished with errors")
+        else:
+            QMessageBox.information(self, "Export Complete", message)
+            self.status_label.setText("Export complete")
+
+    def on_export_thread_finished(self) -> None:
+        """Clear worker references after the background thread stops."""
+        self.export_thread = None
+        self.export_worker = None
