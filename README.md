@@ -1,6 +1,6 @@
 # ReelBatch Editor
 
-A Windows desktop batch video editing tool for short vertical reels. Import multiple MP4 videos, select a fixed logo/watermark area once, preview and test the result, then automatically apply blur, logo/image overlay, or zoom/crop and export all videos.
+A Windows desktop batch video editing tool for short vertical reels. Import multiple MP4 videos, select a fixed logo/watermark area once, preview and test the result, then automatically apply blur, logo/image overlay, or zoom/crop and export all videos at a standardized reel resolution like `1080x1920`.
 
 ## Problem It Solves
 
@@ -33,6 +33,8 @@ ReelBatch Editor automates this process by letting you:
   3. **Zoom/crop** - Slightly zoom and crop the video
 - **Batch export** - Process all videos automatically with progress display
 - **Test export current video** - Export only the selected clip before running the whole queue
+- **Output resolution standardization** - Standardize mixed reels to `720x1280`, `1080x1920`, `1440x2560`, or a custom even-numbered size
+- **Resize mode control** - Choose `Fill & Crop` for full-frame vertical reels or `Fit with Padding` to preserve the entire source frame
 - **Background processing** - UI remains responsive during export
 - **Preset save/load** - Save your selections and settings for reuse
 - **Remembered workflow settings** - Restore your last mode, encoder, quality, sliders, and output folder on next launch
@@ -79,7 +81,7 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed roadmap.
 
 ## Current Status
 
-**Stage:** Phase 7.5 complete - creator workflow guidance, preview playback, and single-video test export are now implemented.
+**Stage:** Phase 7.6 complete - creator workflow guidance, preview playback, single-video test export, and output resolution standardization are now implemented.
 
 **Progress:**
 - [x] GitHub repository initialized
@@ -95,13 +97,15 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed roadmap.
 - [x] JSON preset save/load with optional preset export/import
 - [x] Persistent app settings for mode, encoder, quality, sliders, and output folder
 - [x] Output quality presets for Fast, Balanced, and High Quality
+- [x] Output resolution standardization for `Keep original`, `720x1280`, `1080x1920`, `1440x2560`, and custom even-numbered sizes
+- [x] Resize modes for `Fill & Crop` and `Fit with Padding`
 - [x] Export summary polish with output-folder opening and compact log files
 - [x] Reorganized creator workflow sections for Area Cleanup, Transform, Output, and Presets
 - [x] OpenCV-based preview playback with play/pause, scrubbing, and duration labels
 - [x] Test Export Current Video button for validating one clip before batch export
 - [ ] Windows EXE packaging
 
-The app now supports importing multiple videos, drawing a reusable normalized selection, following a clearer creator workflow, previewing and scrubbing clips before export, saving reusable presets, test-exporting one selected video, and exporting MP4 outputs in the background while keeping the UI responsive.
+The app now supports importing multiple videos, drawing a reusable normalized selection, following a clearer creator workflow, previewing and scrubbing clips before export, standardizing outputs to common vertical reel sizes, saving reusable presets, test-exporting one selected video, and exporting MP4 outputs in the background while keeping the UI responsive.
 
 See [docs/STATUS.md](docs/STATUS.md) for detailed task checklist.
 

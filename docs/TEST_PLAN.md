@@ -197,6 +197,9 @@ Test cases:
 - [ ] Logo file picker works
 - [ ] Zoom percentage slider works
 - [ ] Zoom slider is de-emphasized or disabled when zoom is inactive
+- [ ] Output Resolution dropdown works
+- [ ] Resize Mode dropdown works
+- [ ] Custom width/height inputs appear only when Custom output resolution is selected
 - [ ] Output quality dropdown works
 - [ ] Encoder help text/tooltips explain Auto NVENC behavior
 - [ ] Tooltips appear on key controls
@@ -260,6 +263,49 @@ Test cases:
 3. [ ] Confirm all queued videos are processed
 4. [ ] Confirm queue item statuses update per file
 5. [ ] Confirm blur, logo/image, and zoom/crop modes still behave as before
+
+### Phase 7.6 Manual Output Resolution Tests
+
+#### 720x1280 To 1080x1920 Fill & Crop
+1. [ ] Import a `720x1280` vertical video
+2. [ ] Select `1080x1920` as Output Resolution
+3. [ ] Leave Resize Mode on `Fill & Crop`
+4. [ ] Run `Test Export Current Video`
+5. [ ] Confirm the exported file is `1080x1920` and fills the frame without distortion
+
+#### 720x1280 To 1080x1920 Fit With Padding
+1. [ ] Import a `720x1280` vertical video
+2. [ ] Select `1080x1920` as Output Resolution
+3. [ ] Change Resize Mode to `Fit with Padding`
+4. [ ] Run `Test Export Current Video`
+5. [ ] Confirm the exported file is `1080x1920`, preserves the whole source frame, and pads empty space cleanly
+
+#### 1080x1920 To 1080x1920
+1. [ ] Import a `1080x1920` video
+2. [ ] Leave Output Resolution on `1080x1920`
+3. [ ] Run `Test Export Current Video`
+4. [ ] Confirm the exported file remains `1080x1920`
+5. [ ] Confirm there is no aspect-ratio distortion
+
+#### Blur + 1080x1920
+1. [ ] Import a video, draw a valid rectangle, and choose `Blur selected area`
+2. [ ] Set Output Resolution to `1080x1920`
+3. [ ] Run `Test Export Current Video`
+4. [ ] Confirm the selected area is blurred and the final output is `1080x1920`
+
+#### Logo Overlay + 1080x1920
+1. [ ] Import a video, draw a valid rectangle, and choose `Cover with logo/image`
+2. [ ] Pick a supported logo/image file
+3. [ ] Set Output Resolution to `1080x1920`
+4. [ ] Run `Test Export Current Video`
+5. [ ] Confirm the overlay is applied and the final output is `1080x1920`
+
+#### Zoom/Crop + 1080x1920
+1. [ ] Import a video and enable `Apply zoom/crop`
+2. [ ] Set a zoom value above `100%`
+3. [ ] Set Output Resolution to `1080x1920`
+4. [ ] Run `Test Export Current Video`
+5. [ ] Confirm the zoom/crop effect still applies and the final output is `1080x1920`
 
 ### Phase 7 Manual Workflow Tests
 

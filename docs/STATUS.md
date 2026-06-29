@@ -2,7 +2,20 @@
 
 ## Current Stage
 
-Phase 7.5: Usability and preview playback complete. The app now guides creators through a clearer workflow and supports single-video test exports before batch processing.
+Phase 7.6: Output resolution standardization complete. The app now standardizes mixed reel videos to a chosen vertical export resolution while preserving the existing blur, logo/image, and zoom workflows.
+
+## Phase 7.6 Completed (Output Resolution Standardization)
+
+- [x] Added `Output Resolution` choices for `Keep original`, `720x1280`, `1080x1920`, `1440x2560`, and `Custom`
+- [x] Defaulted the export workflow to `1080x1920` for vertical reels
+- [x] Added `Resize Mode` choices for `Fill & Crop` and `Fit with Padding`
+- [x] Added custom width/height inputs with positive-even-number validation
+- [x] Applied the selected output standardization as the final FFmpeg filter step after blur, logo/image, or zoom processing
+- [x] Preserved audio mapping, encoder selection, output-quality presets, Auto NVENC preference, and CPU fallback behavior
+- [x] Added standardized output suffixes such as `_blurred_1080x1920.mp4` while keeping collision avoidance
+- [x] Persisted output resolution, resize mode, and custom dimensions in app settings
+- [x] Saved and restored output resolution, resize mode, and custom dimensions in presets with backward compatibility for older preset JSON
+- [x] Added unit coverage for fill/crop standardization, fit-with-padding standardization, keep-original behavior, settings persistence, and preset round-trips
 
 ## Phase 7.5 Completed (Creator Workflow + Preview Playback)
 
@@ -126,14 +139,14 @@ Phase 7.5: Usability and preview playback complete. The app now guides creators 
 
 ## Current Goal
 
-Run broader smoke tests on the creator workflow, preview playback, and single-video test export path before packaging work begins.
+Run broader manual smoke tests on mixed-resolution reels before EXE packaging work begins.
 
 ## Next Steps
 
-1. Expand manual smoke testing across preview playback, scrubbing, and per-video test exports
-2. Re-verify blur, logo/image, and zoom/crop exports across more sample resolutions and aspect ratios
-3. Evaluate optional cancellation controls after the new workflow pass settles
-4. Package the Windows build in a later phase after usability smoke testing is complete
+1. Manually verify 720x1280, 1080x1920, and mixed-resolution exports across fill/crop and fit/padding modes
+2. Re-verify blur, logo/image, and zoom/crop exports with output standardization enabled
+3. Evaluate optional cancellation controls after the output-standardization pass settles
+4. Package the Windows build in a later phase after export smoke testing is complete
 
 ## MVP Features
 

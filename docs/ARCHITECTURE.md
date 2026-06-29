@@ -87,6 +87,10 @@ reelbatch-editor/
   - Presets
 - Uses conditional visibility so only the controls relevant to the current creator workflow choice are emphasized
 - Validates mode-specific requirements (selection, overlay image, zoom-only export)
+- Offers output-resolution standardization controls:
+  - `Output Resolution` (`Keep original`, `720x1280`, `1080x1920`, `1440x2560`, `Custom`)
+  - `Resize Mode` (`Fill & Crop`, `Fit with Padding`)
+  - Conditional custom width/height inputs that require positive even integers
 - Offers output quality presets (Fast/Balanced/High Quality)
 - Surfaces mode-specific help text, slider values, and tooltips without redesigning the layout
 - Workflow hint/status area for `Add videos -> Draw area -> Choose options -> Export`
@@ -107,6 +111,10 @@ reelbatch-editor/
   - Blur: Uses FFmpeg `boxblur` or `gblur` filter
   - Logo overlay: Scales the selected image to fit the target rectangle, pads transparently when needed, then uses FFmpeg `overlay`
   - Zoom/crop: Scales the full frame up according to the zoom percentage, then center-crops back to the original dimensions
+- Supports an optional final output-standardization step after the main processing mode:
+  - `Fill & Crop`: `scale=target_w:target_h:force_original_aspect_ratio=increase:flags=lanczos,crop=target_w:target_h`
+  - `Fit with Padding`: `scale=target_w:target_h:force_original_aspect_ratio=decrease:flags=lanczos,pad=target_w:target_h:(ow-iw)/2:(oh-ih)/2`
+- Applies standardization to blur, logo/image, and zoom/crop exports without generating intermediate files
 - Generates encoder-specific commands (NVENC vs CPU)
 - Maps output-quality presets to encoder-specific preset/CRF/CQ arguments
 - Resolves Auto encoder mode by preferring `h264_nvenc` and falling back to `libx264` when needed
@@ -152,6 +160,7 @@ reelbatch-editor/
 - Stores selection coordinates
 - Stores processing mode
 - Stores mode-specific settings
+- Stores output resolution, resize mode, and custom dimensions
 - Serializable to/from JSON
 - Saves to the user's app-data presets folder by default and can also be exported/imported as standalone JSON files
 
@@ -172,6 +181,7 @@ reelbatch-editor/
 - Manages application settings
 - Stores recent paths
 - Stores user preferences
+- Stores output-resolution standardization preferences
 - Persists to JSON/config file
 
 #### Logging
@@ -210,16 +220,18 @@ reelbatch-editor/
 5. Blur and logo/image modes require a normalized rectangle selection
 6. Logo/image mode also requires a supported overlay file (`.png`, `.jpg`, `.jpeg`, `.webp`)
 7. Zoom/crop mode uses the zoom percentage slider and does not require a selection
-8. MainWindow resolves the encoder plan (Auto/CPU/NVIDIA)
-9. User clicks `Export All` or `Test Export Current Video`
-10. MainWindow creates a background Worker for the selected export scope
-11. Worker generates the per-video FFmpeg command for the selected mode via Processor
-12. Worker executes FFmpeg in subprocess using the resolved executable path
-13. If Auto mode fails on NVENC, Worker retries that file with `libx264`
-14. Worker writes compact log events for export start/end, resolved FFmpeg path, per-file results, fallback usage, and failure snippets
-15. UI updates progress bar, queue item status text, and status label
-16. On completion, Worker signals success/failure summary back to MainWindow
-17. MainWindow shows a compact completion dialog with totals, fallback count, output folder, and log file path
+8. Output Resolution and Resize Mode are resolved into optional final standardization settings
+9. MainWindow resolves the encoder plan (Auto/CPU/NVIDIA)
+10. User clicks `Export All` or `Test Export Current Video`
+11. MainWindow creates a background Worker for the selected export scope
+12. Worker generates the per-video FFmpeg command for the selected mode via Processor
+13. Processor appends the final scale/crop or scale/pad step after the main blur/logo/zoom filter when standardization is enabled
+14. Worker executes FFmpeg in subprocess using the resolved executable path
+15. If Auto mode fails on NVENC, Worker retries that file with `libx264`
+16. Worker writes compact log events for export start/end, resolved FFmpeg path, output standardization choice, per-file results, fallback usage, and failure snippets
+17. UI updates progress bar, queue item status text, and status label
+18. On completion, Worker signals success/failure summary back to MainWindow
+19. MainWindow shows a compact completion dialog with totals, fallback count, output folder, and log file path
 
 ## Threading Model
 
@@ -268,6 +280,9 @@ ffmpeg -i input.mp4 -i logo.png -filter_complex "[1:v]scale=w:h:force_original_a
 
 # Zoom/crop example
 ffmpeg -i input.mp4 -filter_complex "[0:v]scale=scaled_w:scaled_h,crop=orig_w:orig_h:(iw-orig_w)/2:(ih-orig_h)/2[outv]" -map [outv] -map 0:a? output_zoomed.mp4
+
+# Blur + final 1080x1920 fill/crop example
+ffmpeg -i input.mp4 -filter_complex "[0:v]split[base][tmp];[tmp]crop=w:h:x:y,boxblur=12:1[blurred];[base][blurred]overlay=x:y[preoutv];[preoutv]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920[outv]" -map [outv] -map 0:a? output_blurred_1080x1920.mp4
 ```
 
 ### NVENC Detection
