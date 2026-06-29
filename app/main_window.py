@@ -12,12 +12,21 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
 from PySide6.QtGui import QAction
 from app.preview_canvas import PreviewCanvas
 from app.video_queue import VideoQueue
-from core.export_worker import BatchExportSummary, ExportWorker
+from core.export_worker import BatchExportSummary, ExportSettings, ExportWorker
 from core.ffmpeg_processor import (
     ENCODER_OPTION_AUTO,
     ENCODER_OPTION_CPU,
     ENCODER_OPTION_NVIDIA,
     FFmpegProcessor,
+)
+from core.processing_modes import (
+    PROCESSING_MODE_BLUR,
+    PROCESSING_MODE_LOGO,
+    PROCESSING_MODE_ZOOM,
+    PROCESSING_MODES,
+    processing_mode_progress_label,
+    processing_mode_status_text,
+    validate_export_request,
 )
 from core.selection import NormalizedSelection
 from core.video_probe import VideoInfo, read_video_metadata, extract_preview_frame
@@ -31,6 +40,7 @@ class MainWindow(QMainWindow):
         self.current_video_info: Optional[VideoInfo] = None
         self.current_selection: Optional[NormalizedSelection] = None
         self.output_directory: Optional[Path] = None
+        self.logo_image_path: Optional[Path] = None
         self.ffmpeg_processor = FFmpegProcessor()
         self.export_thread: Optional[QThread] = None
         self.export_worker: Optional[ExportWorker] = None
@@ -38,6 +48,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1200, 800)
         self.setup_ui()
         self.connect_signals()
+        self.update_mode_controls(self.processing_mode.currentText())
     
     def setup_ui(self):
         """Set up the main window UI."""
@@ -100,7 +111,7 @@ class MainWindow(QMainWindow):
         # Processing Mode
         right_layout.addWidget(QLabel("Processing Mode:"))
         self.processing_mode = QComboBox()
-        self.processing_mode.addItems(["Blur selected area", "Cover with logo/image", "Zoom/crop"])
+        self.processing_mode.addItems(list(PROCESSING_MODES))
         self.processing_mode.setStyleSheet("""
             QComboBox {
                 background-color: #3a3a3a;
@@ -161,6 +172,11 @@ class MainWindow(QMainWindow):
             }
         """)
         right_layout.addWidget(self.logo_button)
+
+        self.logo_file_label = QLabel("No logo/image selected")
+        self.logo_file_label.setStyleSheet("color: #9a9a9a; font-size: 12px;")
+        self.logo_file_label.setWordWrap(True)
+        right_layout.addWidget(self.logo_file_label)
         
         # Zoom Percentage
         right_layout.addWidget(QLabel("Zoom Percentage:"))
@@ -427,6 +443,7 @@ class MainWindow(QMainWindow):
         self.preview_canvas.selection_changed.connect(self.on_selection_changed)
         
         # Edit settings signals
+        self.processing_mode.currentTextChanged.connect(self.on_processing_mode_changed)
         self.logo_button.clicked.connect(self.on_select_logo)
         self.output_button.clicked.connect(self.on_select_output)
         self.save_preset_button.clicked.connect(self.on_save_preset)
@@ -451,8 +468,10 @@ class MainWindow(QMainWindow):
     def on_clear_queue(self):
         """Handler for clear queue button - removes all videos and resets preview."""
         self.current_video_info = None
+        self.current_selection = None
         self.video_queue.clear_queue()
         self.preview_canvas.clear_preview()
+        self.update_selection_display(None)
         self.progress_bar.setValue(0)
         self.status_label.setText("Queue cleared")
     
@@ -563,9 +582,19 @@ class MainWindow(QMainWindow):
             value_label.setText(f"{normalized[key]:.2f}")
     
     def on_select_logo(self):
-        """Placeholder handler for logo selection."""
-        QMessageBox.information(self, "Select Logo", "Logo selection will be implemented in Phase 6")
-        self.status_label.setText("Select logo clicked")
+        """Select and store the overlay image for logo/image export mode."""
+        selected_file, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Logo/Image",
+            "",
+            "Image Files (*.png *.jpg *.jpeg *.webp)",
+        )
+        if not selected_file:
+            return
+
+        self.logo_image_path = Path(selected_file)
+        self.logo_file_label.setText(str(self.logo_image_path))
+        self.status_label.setText("Logo/image selected")
     
     def on_select_output(self):
         """Select and store the output folder for batch exports."""
@@ -586,9 +615,25 @@ class MainWindow(QMainWindow):
         """Placeholder handler for load preset."""
         QMessageBox.information(self, "Load Preset", "Preset loading will be implemented in a later phase")
         self.status_label.setText("Load preset clicked")
+
+    def on_processing_mode_changed(self, mode: str) -> None:
+        """Update UI affordances and status text when the mode changes."""
+        self.update_mode_controls(mode)
+        self.status_label.setText(processing_mode_status_text(mode))
+
+    def update_mode_controls(self, mode: str) -> None:
+        """Enable only the controls relevant to the currently selected mode."""
+        is_blur_mode = mode == PROCESSING_MODE_BLUR
+        is_logo_mode = mode == PROCESSING_MODE_LOGO
+        is_zoom_mode = mode == PROCESSING_MODE_ZOOM
+
+        self.blur_slider.setEnabled(is_blur_mode)
+        self.logo_button.setEnabled(is_logo_mode)
+        self.logo_file_label.setEnabled(is_logo_mode)
+        self.zoom_slider.setEnabled(is_zoom_mode)
     
     def on_export(self):
-        """Validate inputs and start a background blur export."""
+        """Validate inputs and start a background export."""
         videos = self.video_queue.get_all_videos()
         validation_error = self.validate_export_request(videos)
         if validation_error:
@@ -620,36 +665,39 @@ class MainWindow(QMainWindow):
 
     def validate_export_request(self, videos: List[VideoInfo]) -> Optional[str]:
         """Return a user-facing validation error for export, or None when ready."""
-        if not videos:
-            return "Import at least one video before exporting."
-
-        if self.output_directory is None:
-            return "Select an output folder before exporting."
-
-        if self.processing_mode.currentText() != "Blur selected area":
-            return "Only 'Blur selected area' export is available in this phase."
-
-        if self.current_selection is None:
-            return "Draw a valid rectangle selection before exporting."
-
-        return None
+        return validate_export_request(
+            mode=self.processing_mode.currentText(),
+            videos=videos,
+            output_directory=self.output_directory,
+            selection=self.current_selection,
+            overlay_image_path=self.logo_image_path,
+        )
 
     def start_export(self, videos: List[VideoInfo], encoder_plan) -> None:
         """Create the worker thread and begin batch export."""
-        if self.output_directory is None or self.current_selection is None:
+        if self.output_directory is None:
             return
+
+        mode = self.processing_mode.currentText()
+        export_settings = ExportSettings(
+            processing_mode=mode,
+            blur_strength=self.blur_slider.value(),
+            zoom_percent=self.zoom_slider.value(),
+            selection=self.current_selection,
+            overlay_image_path=self.logo_image_path,
+        )
 
         self.export_button.setEnabled(False)
         self.progress_bar.setRange(0, len(videos))
         self.progress_bar.setValue(0)
-        self.status_label.setText("Starting export...")
+        progress_label = processing_mode_progress_label(mode)
+        self.status_label.setText(f"Starting {progress_label.lower()} export...")
 
         self.export_thread = QThread(self)
         self.export_worker = ExportWorker(
             videos=videos,
-            selection=self.current_selection,
             output_directory=self.output_directory,
-            blur_strength=self.blur_slider.value(),
+            settings=export_settings,
             encoder_plan=encoder_plan,
         )
         self.export_worker.moveToThread(self.export_thread)
@@ -689,6 +737,13 @@ class MainWindow(QMainWindow):
         ]
         if summary.fallback_count:
             summary_lines.append(f"CPU fallback used: {summary.fallback_count}")
+        if summary.successes:
+            summary_lines.append("")
+            summary_lines.append("Successful files:")
+            for file_name, output_path in summary.successes[:5]:
+                summary_lines.append(f"- {file_name} -> {Path(output_path).name}")
+            if len(summary.successes) > 5:
+                summary_lines.append(f"... and {len(summary.successes) - 5} more")
         if summary.failures:
             summary_lines.append("")
             summary_lines.append("Failed files:")

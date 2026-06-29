@@ -1,17 +1,34 @@
 """
-Background worker for batch FFmpeg blur exports.
+Background worker for batch FFmpeg exports.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Optional, Sequence
 
 from PySide6.QtCore import QObject, Signal
 
 from core.ffmpeg_processor import EncoderPlan, ExportResult, FFmpegProcessor
+from core.processing_modes import (
+    PROCESSING_MODE_BLUR,
+    PROCESSING_MODE_LOGO,
+    PROCESSING_MODE_ZOOM,
+    processing_mode_progress_label,
+)
 from core.selection import NormalizedSelection
 from core.video_probe import VideoInfo
+
+
+@dataclass(frozen=True)
+class ExportSettings:
+    """Mode-specific export settings shared by the worker and UI."""
+
+    processing_mode: str
+    blur_strength: int = 10
+    zoom_percent: int = 100
+    selection: Optional[NormalizedSelection] = None
+    overlay_image_path: Optional[Path] = None
 
 
 @dataclass(frozen=True)
@@ -23,11 +40,12 @@ class BatchExportSummary:
     failure_count: int
     fallback_count: int
     output_directory: str
+    successes: tuple[tuple[str, str], ...]
     failures: tuple[tuple[str, str], ...]
 
 
 class ExportWorker(QObject):
-    """Run blur exports in a background thread."""
+    """Run batch exports in a background thread."""
 
     progress_changed = Signal(int, int)
     status_changed = Signal(str)
@@ -37,17 +55,15 @@ class ExportWorker(QObject):
     def __init__(
         self,
         videos: Sequence[VideoInfo],
-        selection: NormalizedSelection,
         output_directory: Path | str,
-        blur_strength: int,
+        settings: ExportSettings,
         encoder_plan: EncoderPlan,
         ffmpeg_path: str = "ffmpeg",
     ) -> None:
         super().__init__()
         self._videos = list(videos)
-        self._selection = selection
         self._output_directory = Path(output_directory)
-        self._blur_strength = int(blur_strength)
+        self._settings = settings
         self._encoder_plan = encoder_plan
         self._processor = FFmpegProcessor(ffmpeg_path=ffmpeg_path)
 
@@ -55,6 +71,7 @@ class ExportWorker(QObject):
         """Export all queued videos and emit a final batch summary."""
         success_count = 0
         fallback_count = 0
+        successes: list[tuple[str, str]] = []
         failures: list[tuple[str, str]] = []
         total = len(self._videos)
 
@@ -69,21 +86,17 @@ class ExportWorker(QObject):
                 failure_count=total,
                 fallback_count=0,
                 output_directory=str(self._output_directory),
+                successes=(),
                 failures=(("Batch export", str(exc)),),
             )
             self.finished.emit(summary)
             return
 
         for index, video_info in enumerate(self._videos, start=1):
-            self.status_changed.emit(f"Exporting {index}/{total}: {video_info.file_name}")
+            progress_label = processing_mode_progress_label(self._settings.processing_mode)
+            self.status_changed.emit(f"{progress_label} {index}/{total}: {video_info.file_name}")
             try:
-                result = self._processor.export_blur_video(
-                    video_info=video_info,
-                    selection=self._selection,
-                    output_directory=self._output_directory,
-                    blur_strength=self._blur_strength,
-                    encoder_plan=self._encoder_plan,
-                )
+                result = self._export_video(video_info)
             except Exception as exc:
                 result = ExportResult(
                     success=False,
@@ -98,6 +111,7 @@ class ExportWorker(QObject):
 
             if result.success:
                 success_count += 1
+                successes.append((video_info.file_name, str(result.output_path)))
             else:
                 failures.append(
                     (
@@ -117,6 +131,43 @@ class ExportWorker(QObject):
             failure_count=len(failures),
             fallback_count=fallback_count,
             output_directory=str(self._output_directory),
+            successes=tuple(successes),
             failures=tuple(failures),
         )
         self.finished.emit(summary)
+
+    def _export_video(self, video_info: VideoInfo) -> ExportResult:
+        """Dispatch export processing for the configured mode."""
+        if self._settings.processing_mode == PROCESSING_MODE_BLUR:
+            if self._settings.selection is None:
+                raise ValueError("Blur export requires a rectangle selection.")
+            return self._processor.export_blur_video(
+                video_info=video_info,
+                selection=self._settings.selection,
+                output_directory=self._output_directory,
+                blur_strength=self._settings.blur_strength,
+                encoder_plan=self._encoder_plan,
+            )
+
+        if self._settings.processing_mode == PROCESSING_MODE_LOGO:
+            if self._settings.selection is None:
+                raise ValueError("Logo/image export requires a rectangle selection.")
+            if self._settings.overlay_image_path is None:
+                raise ValueError("Logo/image export requires a selected image file.")
+            return self._processor.export_logo_overlay_video(
+                video_info=video_info,
+                selection=self._settings.selection,
+                overlay_image_path=self._settings.overlay_image_path,
+                output_directory=self._output_directory,
+                encoder_plan=self._encoder_plan,
+            )
+
+        if self._settings.processing_mode == PROCESSING_MODE_ZOOM:
+            return self._processor.export_zoom_crop_video(
+                video_info=video_info,
+                output_directory=self._output_directory,
+                zoom_percent=self._settings.zoom_percent,
+                encoder_plan=self._encoder_plan,
+            )
+
+        raise ValueError(f"Unsupported processing mode: {self._settings.processing_mode}")
