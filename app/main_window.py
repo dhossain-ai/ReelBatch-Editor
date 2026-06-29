@@ -3,13 +3,15 @@ Main Window for ReelBatch Editor
 """
 from __future__ import annotations
 from typing import List, Optional
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                                QLabel, QComboBox, QSlider, QPushButton, 
-                               QProgressBar, QFileDialog, QMessageBox, QFrame)
-from PySide6.QtCore import Qt
+                               QProgressBar, QFileDialog, QMessageBox, QFrame,
+                               QGridLayout)
 from PySide6.QtGui import QAction
 from app.preview_canvas import PreviewCanvas
 from app.video_queue import VideoQueue
+from core.selection import NormalizedSelection
 from core.video_probe import VideoInfo, read_video_metadata, extract_preview_frame
 
 
@@ -18,6 +20,8 @@ class MainWindow(QMainWindow):
     
     def __init__(self):
         super().__init__()
+        self.current_video_info: Optional[VideoInfo] = None
+        self.current_selection: Optional[NormalizedSelection] = None
         self.setWindowTitle("ReelBatch Editor")
         self.setMinimumSize(1200, 800)
         self.setup_ui()
@@ -253,6 +257,79 @@ class MainWindow(QMainWindow):
         preset_layout.addWidget(self.load_preset_button)
         
         right_layout.addLayout(preset_layout)
+
+        selection_section = QFrame()
+        selection_section.setStyleSheet("""
+            QFrame {
+                background-color: #2d2d2d;
+                border: 1px solid #3a3a3a;
+                border-radius: 8px;
+                padding: 10px;
+            }
+        """)
+        selection_layout = QVBoxLayout(selection_section)
+        selection_layout.setContentsMargins(12, 12, 12, 12)
+        selection_layout.setSpacing(10)
+
+        selection_title = QLabel("Selection")
+        selection_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #ffffff;")
+        selection_layout.addWidget(selection_title)
+
+        selection_grid = QGridLayout()
+        selection_grid.setHorizontalSpacing(12)
+        selection_grid.setVerticalSpacing(8)
+
+        self.selection_value_labels: dict[str, QLabel] = {}
+        selection_fields = [
+            ("X %", "x_percent"),
+            ("Y %", "y_percent"),
+            ("Width %", "width_percent"),
+            ("Height %", "height_percent"),
+        ]
+
+        for row, (label_text, key) in enumerate(selection_fields):
+            field_label = QLabel(label_text)
+            field_label.setStyleSheet("color: #cfcfcf; font-size: 12px;")
+            selection_grid.addWidget(field_label, row, 0)
+
+            value_label = QLabel("--")
+            value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            value_label.setStyleSheet("""
+                QLabel {
+                    background-color: #1f1f1f;
+                    color: #4ea6ff;
+                    border: 1px solid #3a3a3a;
+                    border-radius: 4px;
+                    padding: 6px 8px;
+                    font-size: 12px;
+                    font-weight: bold;
+                }
+            """)
+            selection_grid.addWidget(value_label, row, 1)
+            self.selection_value_labels[key] = value_label
+
+        selection_layout.addLayout(selection_grid)
+
+        self.clear_selection_button = QPushButton("Clear Selection")
+        self.clear_selection_button.setStyleSheet("""
+            QPushButton {
+                background-color: #3a3a3a;
+                color: #e0e0e0;
+                border: none;
+                border-radius: 6px;
+                padding: 10px;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #4a4a4a;
+            }
+            QPushButton:pressed {
+                background-color: #2a2a2a;
+            }
+        """)
+        selection_layout.addWidget(self.clear_selection_button)
+
+        right_layout.addWidget(selection_section)
         
         right_layout.addStretch()
         content_layout.addWidget(right_panel)
@@ -330,12 +407,14 @@ class MainWindow(QMainWindow):
         
         # Connect video selection signal
         self.video_queue.video_selected.connect(self.on_video_selected)
+        self.preview_canvas.selection_changed.connect(self.on_selection_changed)
         
         # Edit settings signals
         self.logo_button.clicked.connect(self.on_select_logo)
         self.output_button.clicked.connect(self.on_select_output)
         self.save_preset_button.clicked.connect(self.on_save_preset)
         self.load_preset_button.clicked.connect(self.on_load_preset)
+        self.clear_selection_button.clicked.connect(self.on_clear_selection)
         
         # Export signal
         self.export_button.clicked.connect(self.on_export)
@@ -354,12 +433,14 @@ class MainWindow(QMainWindow):
     
     def on_clear_queue(self):
         """Handler for clear queue button - removes all videos and resets preview."""
+        self.current_video_info = None
         self.video_queue.clear_queue()
         self.preview_canvas.clear_preview()
         self.status_label.setText("Queue cleared")
     
     def on_video_selected(self, video_info: Optional[VideoInfo]):
         """Handler for video selection changes - updates preview."""
+        self.current_video_info = video_info
         if video_info:
             self.status_label.setText(f"Selected video: {video_info.file_name}")
             self.update_preview(video_info)
@@ -416,11 +497,18 @@ class MainWindow(QMainWindow):
             video_info: VideoInfo object for the selected video
         """
         try:
+            self.current_video_info = video_info
+
             # Extract preview frame (prefer frame at 1 second)
             preview_image = extract_preview_frame(video_info.file_path, target_time_seconds=1.0)
             
             if preview_image:
-                self.preview_canvas.set_preview_image(preview_image)
+                self.preview_canvas.set_preview(
+                    preview_image,
+                    video_width=video_info.width,
+                    video_height=video_info.height,
+                )
+                self.preview_canvas.set_normalized_selection(self.current_selection)
             else:
                 # If extraction fails, show friendly message
                 self.preview_canvas.clear_preview()
@@ -430,6 +518,31 @@ class MainWindow(QMainWindow):
             print(f"Error updating preview: {e}")
             self.preview_canvas.clear_preview()
             self.status_label.setText(f"Preview error: {video_info.file_name}")
+
+    def on_selection_changed(self, selection: Optional[dict]):
+        """Update the settings panel when the canvas selection changes."""
+        self.current_selection = NormalizedSelection.from_mapping(selection)
+        self.update_selection_display(self.current_selection)
+
+        if self.current_selection is None:
+            self.status_label.setText("Selection cleared")
+        else:
+            self.status_label.setText("Selection updated")
+
+    def on_clear_selection(self):
+        """Clear the current rectangle selection."""
+        self.preview_canvas.clear_selection()
+
+    def update_selection_display(self, selection: Optional[NormalizedSelection]):
+        """Refresh the selection values shown in the settings panel."""
+        if selection is None:
+            for value_label in self.selection_value_labels.values():
+                value_label.setText("--")
+            return
+
+        normalized = selection.to_dict()
+        for key, value_label in self.selection_value_labels.items():
+            value_label.setText(f"{normalized[key]:.2f}")
     
     def on_select_logo(self):
         """Placeholder handler for logo selection."""

@@ -70,9 +70,6 @@ class PreviewCanvas(QWidget):
 
     def clear_selection(self) -> None:
         """Clear the current selection and notify listeners."""
-        if self._selection is None:
-            return
-
         self._selection = None
         self._cancel_drag()
         self.update()
