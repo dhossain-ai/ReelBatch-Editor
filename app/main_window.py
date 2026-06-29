@@ -8,8 +8,7 @@ from PySide6.QtCore import Qt, QThread
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                                QLabel, QComboBox, QSlider, QPushButton, 
                                QProgressBar, QFileDialog, QMessageBox, QFrame,
-                               QGridLayout)
-from PySide6.QtGui import QAction
+                               QGridLayout, QInputDialog)
 from app.preview_canvas import PreviewCanvas
 from app.video_queue import VideoQueue
 from core.export_worker import BatchExportSummary, ExportSettings, ExportWorker
@@ -19,6 +18,7 @@ from core.ffmpeg_processor import (
     ENCODER_OPTION_NVIDIA,
     FFmpegProcessor,
 )
+from core.presets import ExportPreset, PresetStore
 from core.processing_modes import (
     PROCESSING_MODE_BLUR,
     PROCESSING_MODE_LOGO,
@@ -42,6 +42,7 @@ class MainWindow(QMainWindow):
         self.output_directory: Optional[Path] = None
         self.logo_image_path: Optional[Path] = None
         self.ffmpeg_processor = FFmpegProcessor()
+        self.preset_store = PresetStore()
         self.export_thread: Optional[QThread] = None
         self.export_worker: Optional[ExportWorker] = None
         self.setWindowTitle("ReelBatch Editor")
@@ -580,6 +581,49 @@ class MainWindow(QMainWindow):
         normalized = selection.to_dict()
         for key, value_label in self.selection_value_labels.items():
             value_label.setText(f"{normalized[key]:.2f}")
+
+    def build_current_preset(self, preset_name: str) -> ExportPreset:
+        """Build a preset object from the current workflow state."""
+        return ExportPreset(
+            name=preset_name,
+            processing_mode=self.processing_mode.currentText(),
+            blur_strength=self.blur_slider.value(),
+            zoom_percentage=self.zoom_slider.value(),
+            encoder_preference=self.encoder_combo.currentText(),
+            selection=self.current_selection,
+            logo_image_path=str(self.logo_image_path) if self.logo_image_path else None,
+        )
+
+    def apply_preset(self, preset: ExportPreset) -> Optional[str]:
+        """Apply a loaded preset and return any friendly warning text."""
+        self.current_selection = preset.selection
+        self.processing_mode.setCurrentText(preset.processing_mode)
+        self.blur_slider.setValue(preset.blur_strength)
+        self.zoom_slider.setValue(preset.zoom_percentage)
+        self.encoder_combo.setCurrentText(preset.encoder_preference)
+
+        if preset.logo_image_path:
+            stored_logo_path = Path(preset.logo_image_path)
+            if stored_logo_path.exists():
+                self.logo_image_path = stored_logo_path
+                self.logo_file_label.setText(str(stored_logo_path))
+                warning_text = None
+            else:
+                self.logo_image_path = None
+                self.logo_file_label.setText("Stored logo/image path is missing")
+                warning_text = (
+                    f"Preset '{preset.name}' loaded, but the stored logo/image path no longer exists:\n"
+                    f"{stored_logo_path}"
+                )
+        else:
+            self.logo_image_path = None
+            self.logo_file_label.setText("No logo/image selected")
+            warning_text = None
+
+        self.preview_canvas.set_normalized_selection(self.current_selection)
+        self.update_selection_display(self.current_selection)
+        self.update_mode_controls(self.processing_mode.currentText())
+        return warning_text
     
     def on_select_logo(self):
         """Select and store the overlay image for logo/image export mode."""
@@ -607,14 +651,60 @@ class MainWindow(QMainWindow):
         self.status_label.setText("Output folder selected")
     
     def on_save_preset(self):
-        """Placeholder handler for save preset."""
-        QMessageBox.information(self, "Save Preset", "Preset saving will be implemented in Phase 4")
-        self.status_label.setText("Save preset clicked")
+        """Save the current settings to the app-data preset store and optionally export JSON."""
+        preset_name, accepted = QInputDialog.getText(
+            self,
+            "Save Preset",
+            "Preset name:",
+            text=self.processing_mode.currentText(),
+        )
+        if not accepted or not preset_name.strip():
+            return
+
+        preset = self.build_current_preset(preset_name.strip())
+        saved_path = self.preset_store.save_preset(preset)
+
+        if QMessageBox.question(
+            self,
+            "Preset Saved",
+            f"Saved preset to:\n{saved_path}\n\nDo you want to export a copy to another location?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        ) == QMessageBox.Yes:
+            selected_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Export Preset JSON",
+                str(Path.home() / saved_path.name),
+                "Preset Files (*.json)",
+            )
+            if selected_path:
+                self.preset_store.save_preset_to_path(preset, selected_path)
+
+        self.status_label.setText(f"Preset saved: {preset.name}")
     
     def on_load_preset(self):
-        """Placeholder handler for load preset."""
-        QMessageBox.information(self, "Load Preset", "Preset loading will be implemented in a later phase")
-        self.status_label.setText("Load preset clicked")
+        """Load a preset from app data or any external JSON file."""
+        selected_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load Preset",
+            str(self.preset_store.presets_directory),
+            "Preset Files (*.json)",
+        )
+        if not selected_path:
+            return
+
+        try:
+            preset = self.preset_store.load_preset(selected_path)
+        except Exception as exc:
+            QMessageBox.warning(self, "Load Preset Error", f"Could not load preset:\n{exc}")
+            self.status_label.setText("Preset load failed")
+            return
+
+        warning_text = self.apply_preset(preset)
+        self.status_label.setText(f"Preset loaded: {preset.name}")
+
+        if warning_text:
+            QMessageBox.information(self, "Preset Loaded", warning_text)
 
     def on_processing_mode_changed(self, mode: str) -> None:
         """Update UI affordances and status text when the mode changes."""
