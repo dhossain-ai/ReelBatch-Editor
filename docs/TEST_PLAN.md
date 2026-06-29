@@ -176,31 +176,90 @@ Test cases:
 #### Preview Canvas
 - [ ] Preview displays first video frame
 - [ ] Preview updates when selecting different video
+- [ ] Preview playback controls appear under the preview
+- [ ] Play/Pause toggles video-only preview playback
+- [ ] Timeline slider scrubs to a new frame
+- [ ] Current time / total duration label updates while playing and scrubbing
 - [ ] Can draw rectangle with mouse
 - [ ] Rectangle appears while drawing
 - [ ] Rectangle remains after drawing
+- [ ] Rectangle remains visible while preview playback is moving
 - [ ] Can clear selection
 - [ ] Preview scales with window size
 
 #### Controls
-- [ ] Processing mode selector works (blur/logo/zoom)
-- [ ] Settings panel changes based on mode
+- [ ] Area Cleanup dropdown works (`None`, `Blur selected area`, `Cover with logo/image`)
+- [ ] Right settings panel is grouped into Area Cleanup, Transform, Output, and Presets
+- [ ] Workflow hint text updates as the user progresses
+- [ ] Conditional controls show/hide cleanly for blur and logo/image cleanup
+- [ ] Apply zoom/crop checkbox works
 - [ ] Blur intensity slider works
 - [ ] Logo file picker works
 - [ ] Zoom percentage slider works
+- [ ] Zoom slider is de-emphasized or disabled when zoom is inactive
 - [ ] Output quality dropdown works
+- [ ] Encoder help text/tooltips explain Auto NVENC behavior
 - [ ] Tooltips appear on key controls
 - [x] Output folder picker works
 - [ ] Export button is enabled when ready
+- [ ] Test Export Current Video button is available when a video is selected
 
 #### Export
 - [x] Progress bar appears during export
 - [x] Progress updates for each video
 - [x] Status text shows current operation
+- [ ] Queue items show useful status text during or after export
 - [ ] Cancel button stops export
 - [x] Success message appears on completion
 - [x] Error message appears on failure
 - [ ] Output folder opens on completion (optional)
+
+### Phase 7.5 Manual Workflow Tests
+
+#### Preview Playback
+1. [ ] Launch the app and import at least one playable video
+2. [ ] Select a queue item and confirm the preview loads with playback controls beneath it
+3. [ ] Click `Play` and confirm the preview advances frame-by-frame without audio
+4. [ ] Click `Pause` and confirm playback stops on the current frame
+5. [ ] Confirm the current time / total duration label updates while playing
+
+#### Timeline Scrubbing
+1. [ ] Select a video with at least 10 seconds of duration
+2. [ ] Drag the timeline slider to several positions
+3. [ ] Confirm the preview jumps to the chosen frame
+4. [ ] Confirm the current time label matches the scrubbed position
+5. [ ] Start playback, scrub to another point, and confirm playback resumes cleanly if it was running before the drag
+
+#### Draw Selection While Paused
+1. [ ] Load a video and pause the preview
+2. [ ] Draw a rectangle on the preview canvas
+3. [ ] Confirm the rectangle remains visible after mouse release
+4. [ ] Play the preview and confirm the rectangle stays visible over changing frames
+5. [ ] Pause again and resize the window to confirm the rectangle still tracks correctly
+
+#### Switch Videos
+1. [ ] Import at least two videos
+2. [ ] Start preview playback on the first video
+3. [ ] Select a different queue item
+4. [ ] Confirm playback stops automatically
+5. [ ] Confirm the newly selected video loads with its own preview timeline state
+6. [ ] Click `Clear Queue` and confirm preview playback stops, the preview resets, and playback controls return to an empty state
+
+#### Test Export Current Video
+1. [ ] Import at least two videos and select one
+2. [ ] Choose a valid Area Cleanup or enable `Apply zoom/crop`
+3. [ ] Select an output folder and any required logo/image file
+4. [ ] Click `Test Export Current Video`
+5. [ ] Confirm only the selected video is exported
+6. [ ] Confirm the completion summary reports one total file
+7. [ ] Confirm the queue item shows a useful completion status such as done or CPU fallback
+
+#### Export All Still Works
+1. [ ] Import multiple videos after verifying test export
+2. [ ] Run `Export All`
+3. [ ] Confirm all queued videos are processed
+4. [ ] Confirm queue item statuses update per file
+5. [ ] Confirm blur, logo/image, and zoom/crop modes still behave as before
 
 ### Phase 7 Manual Workflow Tests
 

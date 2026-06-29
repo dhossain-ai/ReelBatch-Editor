@@ -1,6 +1,6 @@
 # ReelBatch Editor
 
-A Windows desktop batch video editing tool for short vertical reels. Import multiple MP4 videos, select a fixed logo/watermark area once, then automatically apply blur, logo/image overlay, or zoom/crop and export all videos.
+A Windows desktop batch video editing tool for short vertical reels. Import multiple MP4 videos, select a fixed logo/watermark area once, preview and test the result, then automatically apply blur, logo/image overlay, or zoom/crop and export all videos.
 
 ## Problem It Solves
 
@@ -8,15 +8,19 @@ Creators who produce many short AI-generated reel videos often need to hide or r
 
 ReelBatch Editor automates this process by letting you:
 - Import many videos at once
+- Preview and scrub through a clip before exporting
 - Select the target area once
 - Apply the same edit to all videos automatically
+- Test one clip before committing to the full batch
 - Export processed videos in batch
 
 ## MVP Features
 
 - **Multi-video import** - Add multiple MP4 files to the processing queue
 - **Video queue/list** - View and manage imported videos with metadata
-- **Preview canvas** - See the first frame of videos to identify logo/watermark areas
+- **Guided creator workflow** - Follow `Add videos -> Draw area -> Choose options -> Export`
+- **Preview canvas** - See and scrub through preview frames to identify logo/watermark areas
+- **Preview playback** - Play/pause video-only preview with an OpenCV-based timeline
 - **Rectangle selection** - Draw a rectangular selection over the target area
 - **Normalized coordinates** - Selection stored as percentages, works across different resolutions
 - **Blur export** - Export MP4 files with the selected rectangle blurred via FFmpeg
@@ -28,6 +32,7 @@ ReelBatch Editor automates this process by letting you:
   2. **Logo overlay** - Cover the selected area with your own logo or image
   3. **Zoom/crop** - Slightly zoom and crop the video
 - **Batch export** - Process all videos automatically with progress display
+- **Test export current video** - Export only the selected clip before running the whole queue
 - **Background processing** - UI remains responsive during export
 - **Preset save/load** - Save your selections and settings for reuse
 - **Remembered workflow settings** - Restore your last mode, encoder, quality, sliders, and output folder on next launch
@@ -74,7 +79,7 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed roadmap.
 
 ## Current Status
 
-**Stage:** Phase 7 complete - presets, workflow persistence, and export polish are now implemented.
+**Stage:** Phase 7.5 complete - creator workflow guidance, preview playback, and single-video test export are now implemented.
 
 **Progress:**
 - [x] GitHub repository initialized
@@ -91,9 +96,12 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed roadmap.
 - [x] Persistent app settings for mode, encoder, quality, sliders, and output folder
 - [x] Output quality presets for Fast, Balanced, and High Quality
 - [x] Export summary polish with output-folder opening and compact log files
+- [x] Reorganized creator workflow sections for Area Cleanup, Transform, Output, and Presets
+- [x] OpenCV-based preview playback with play/pause, scrubbing, and duration labels
+- [x] Test Export Current Video button for validating one clip before batch export
 - [ ] Windows EXE packaging
 
-The app now supports importing multiple videos, drawing a reusable normalized selection, choosing a blur/logo/zoom processing mode, saving reusable presets, remembering the last workflow settings, and exporting MP4 outputs in the background while keeping the UI responsive.
+The app now supports importing multiple videos, drawing a reusable normalized selection, following a clearer creator workflow, previewing and scrubbing clips before export, saving reusable presets, test-exporting one selected video, and exporting MP4 outputs in the background while keeping the UI responsive.
 
 See [docs/STATUS.md](docs/STATUS.md) for detailed task checklist.
 
@@ -126,7 +134,7 @@ The app uses a layered architecture:
 - **Data models** - Video items, selections, presets
 - **Utilities** - FFmpeg detection, coordinate conversion, configuration
 
-Heavy video processing runs in background threads to keep the UI responsive.
+Heavy video processing runs in background threads to keep the UI responsive. Preview playback stays lightweight by using OpenCV frame reads plus a `QTimer`, without introducing Qt Multimedia.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture.
 
@@ -166,7 +174,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-The app will launch with a modern dark UI showing the video queue, preview canvas, and edit settings panels.
+The app will launch with a modern dark UI showing the video queue, preview canvas with playback controls, and a creator-focused workflow panel.
 
 ## Building Windows EXE
 

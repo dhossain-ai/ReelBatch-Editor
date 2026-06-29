@@ -2,7 +2,25 @@
 
 ## Current Stage
 
-Phase 7: Workflow polish complete. Ready for packaging prep and broader smoke testing.
+Phase 7.5: Usability and preview playback complete. The app now guides creators through a clearer workflow and supports single-video test exports before batch processing.
+
+## Phase 7.5 Completed (Creator Workflow + Preview Playback)
+
+- [x] Reorganized the right settings panel into clear `Area Cleanup`, `Transform`, `Output`, and `Presets` sections
+- [x] Replaced the visually confusing single mode picker with a creator-friendly `Area Cleanup` dropdown (`None`, `Blur selected area`, `Cover with logo/image`)
+- [x] Added helper guidance for drawing the logo/watermark rectangle directly on the preview
+- [x] Showed blur controls only when blur cleanup is selected
+- [x] Showed logo/image controls only when logo cleanup is selected
+- [x] Added a clear `Apply zoom/crop` checkbox and de-emphasized the zoom slider when zoom is inactive
+- [x] Preserved the existing blur, logo/image, and zoom/crop export behavior by mapping the new UI back onto the current processing modes
+- [x] Added a workflow hint area that guides users through `Add videos -> Draw area -> Choose options -> Export`
+- [x] Added OpenCV + `QTimer` preview playback with play/pause, timeline scrubbing, and current/total time labels
+- [x] Kept rectangle selection visible while preview frames change, while paused, and while scrubbing
+- [x] Stopped playback cleanly when switching videos or clearing the queue
+- [x] Added `Test Export Current Video` so creators can validate one clip before running a full batch
+- [x] Expanded queue labels to show filename, resolution, duration, and export status
+- [x] Kept presets, persistent settings, FFmpeg discovery, Auto NVENC preference, and CPU fallback behavior working
+- [x] Added helper tests for workflow state mapping, playback timing helpers, and queue label formatting
 
 ## Hotfixes
 
@@ -108,14 +126,14 @@ Phase 7: Workflow polish complete. Ready for packaging prep and broader smoke te
 
 ## Current Goal
 
-Prepare for packaging, expand manual export verification, and continue MVP hardening with improved FFmpeg discovery for Windows installs and future bundled builds.
+Run broader smoke tests on the creator workflow, preview playback, and single-video test export path before packaging work begins.
 
 ## Next Steps
 
-1. Package the Windows build after export modes are complete
-2. Expand smoke testing across more sample video resolutions and aspect ratios
-3. Evaluate optional cancellation controls after manual export validation
-4. Add release-oriented verification around presets, logs, and settings migration
+1. Expand manual smoke testing across preview playback, scrubbing, and per-video test exports
+2. Re-verify blur, logo/image, and zoom/crop exports across more sample resolutions and aspect ratios
+3. Evaluate optional cancellation controls after the new workflow pass settles
+4. Package the Windows build in a later phase after usability smoke testing is complete
 
 ## MVP Features
 
@@ -147,6 +165,7 @@ Prepare for packaging, expand manual export verification, and continue MVP harde
 * Selection storage: normalized percentages with preview-space clamping
 * First export mode: blur selected area only
 * Auto encoder mode: prefer NVENC, retry with libx264 on failure when available
+* Preview playback: OpenCV frame reads driven by a UI-thread `QTimer`, with no Qt Multimedia dependency
 
 ## Not in MVP
 

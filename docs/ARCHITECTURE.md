@@ -59,6 +59,10 @@ reelbatch-editor/
 - Coordinates between video list, preview, and controls
 - Restores persisted app settings at startup and saves them when relevant controls change
 - Applies presets to the preview selection, processing mode, sliders, encoder, quality, and logo/image path
+- Derives the effective export mode from the simplified creator workflow controls:
+  - `Area Cleanup` dropdown for blur/logo cleanup
+  - `Apply zoom/crop` checkbox for zoom-only exports in this phase
+  - `Test Export Current Video` for single-clip validation before batch export
 
 #### PreviewCanvas
 - Displays video preview frame
@@ -66,20 +70,27 @@ reelbatch-editor/
 - Draws selection rectangle overlay
 - Converts between screen and normalized coordinates
 - Uses the fitted preview image rect, not the full widget bounds, when mapping selection coordinates
+- Reuses the same normalized selection overlay while preview playback advances frame-by-frame
 
 #### VideoList
 - Displays queue of imported videos
 - Shows video metadata (filename, resolution, duration)
+- Shows lightweight export status text such as queued, done, CPU fallback, or failed
 - Allows reordering and removal
 - Signals selection changes to MainWindow
 
 #### Controls
-- Processing mode selector (blur/logo/zoom)
-- Settings panels for each mode
+- Guided right-panel sections for:
+  - Area Cleanup
+  - Transform
+  - Output
+  - Presets
+- Uses conditional visibility so only the controls relevant to the current creator workflow choice are emphasized
 - Validates mode-specific requirements (selection, overlay image, zoom-only export)
 - Offers output quality presets (Fast/Balanced/High Quality)
 - Surfaces mode-specific help text, slider values, and tooltips without redesigning the layout
-- Export button and progress indicator
+- Workflow hint/status area for `Add videos -> Draw area -> Choose options -> Export`
+- Export All button, Test Export Current Video button, and progress indicator
 - Output folder picker
 
 ### Video Processing Layer
@@ -116,6 +127,13 @@ reelbatch-editor/
 - Gets video dimensions and metadata
 - Converts frames to Qt-compatible format
 - Caches preview frames for performance
+
+#### Preview Playback
+- Uses one OpenCV `VideoCapture` for the currently selected queue item
+- Drives frame advancement with a UI-thread `QTimer`
+- Keeps playback intentionally simple: video-only, no audio, no Qt Multimedia dependency
+- Supports play/pause, timeline scrubbing, current/total time display, and clean reset on video switch or queue clear
+- Reapplies the normalized rectangle overlay after every displayed frame so the selection stays visible while playing and scrubbing
 
 ### Data Models
 
@@ -171,23 +189,37 @@ reelbatch-editor/
 5. User draws rectangle on PreviewCanvas
 6. Selection stores normalized coordinates
 
+### Preview Playback Flow
+1. User selects a video from the queue
+2. MainWindow opens a dedicated OpenCV `VideoCapture`
+3. MainWindow seeks to an initial preview frame near 1 second
+4. `QTimer` advances playback by reading the next frame from the same capture
+5. Each frame is converted to `QImage` and displayed on `PreviewCanvas`
+6. The saved normalized selection is redrawn over the current frame
+7. Timeline scrubbing seeks the capture to a requested frame, updates the preview, and optionally resumes playback
+8. Switching videos or clearing the queue stops the timer, releases the capture, and resets playback controls
+
 ### Export Flow
-1. User selects processing mode and settings
+1. User chooses Area Cleanup and/or Transform settings in the simplified workflow UI
 2. MainWindow validates queue, output folder, FFmpeg availability, and any mode-specific requirements
-3. FFmpeg discovery resolves the executable path once and surfaces it in status/log output for debugging
-4. Blur and logo/image modes require a normalized rectangle selection
-5. Logo/image mode also requires a supported overlay file (`.png`, `.jpg`, `.jpeg`, `.webp`)
-6. Zoom/crop mode uses the zoom percentage slider and does not require a selection
-7. MainWindow resolves the encoder plan (Auto/CPU/NVIDIA)
-8. User clicks Export button
-9. MainWindow creates a background Worker for the batch
-10. Worker generates the per-video FFmpeg command for the selected mode via Processor
-11. Worker executes FFmpeg in subprocess using the resolved executable path
-12. If Auto mode fails on NVENC, Worker retries that file with `libx264`
-13. Worker writes compact log events for export start/end, resolved FFmpeg path, per-file results, fallback usage, and failure snippets
-14. UI updates progress bar and status text
-15. On completion, Worker signals success/failure summary back to MainWindow
-16. MainWindow shows a compact completion dialog with totals, fallback count, output folder, and log file path
+3. MainWindow derives the effective existing export mode:
+   - blur selected area
+   - cover with logo/image
+   - zoom/crop
+4. FFmpeg discovery resolves the executable path once and surfaces it in status/log output for debugging
+5. Blur and logo/image modes require a normalized rectangle selection
+6. Logo/image mode also requires a supported overlay file (`.png`, `.jpg`, `.jpeg`, `.webp`)
+7. Zoom/crop mode uses the zoom percentage slider and does not require a selection
+8. MainWindow resolves the encoder plan (Auto/CPU/NVIDIA)
+9. User clicks `Export All` or `Test Export Current Video`
+10. MainWindow creates a background Worker for the selected export scope
+11. Worker generates the per-video FFmpeg command for the selected mode via Processor
+12. Worker executes FFmpeg in subprocess using the resolved executable path
+13. If Auto mode fails on NVENC, Worker retries that file with `libx264`
+14. Worker writes compact log events for export start/end, resolved FFmpeg path, per-file results, fallback usage, and failure snippets
+15. UI updates progress bar, queue item status text, and status label
+16. On completion, Worker signals success/failure summary back to MainWindow
+17. MainWindow shows a compact completion dialog with totals, fallback count, output folder, and log file path
 
 ## Threading Model
 
@@ -196,12 +228,14 @@ reelbatch-editor/
 - Handles all UI updates
 - Responds to user input
 - Must never block
+- Owns preview playback control because OpenCV frame reads are lightweight and timer-driven for a single selected clip
 
 ### Worker Threads
 - One worker per export operation
 - Can run multiple workers in parallel (configurable)
 - Communicate with UI via Qt signals/slots
 - Use subprocess to run FFmpeg (non-blocking)
+- Remain responsible only for export work, not preview playback
 
 ## Coordinate System
 
