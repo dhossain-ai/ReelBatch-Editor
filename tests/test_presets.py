@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -17,6 +18,10 @@ class PresetStoreTests(unittest.TestCase):
             zoom_percentage=108,
             encoder_preference="Auto - Prefer NVIDIA NVENC",
             output_quality="High Quality",
+            output_resolution="1080x1920",
+            resize_mode="Fill & Crop",
+            custom_output_width=1080,
+            custom_output_height=1920,
             selection=NormalizedSelection(80.0, 5.0, 12.0, 8.0),
             logo_image_path="C:/assets/logo.png",
         )
@@ -33,6 +38,10 @@ class PresetStoreTests(unittest.TestCase):
         self.assertEqual(loaded.zoom_percentage, preset.zoom_percentage)
         self.assertEqual(loaded.encoder_preference, preset.encoder_preference)
         self.assertEqual(loaded.output_quality, preset.output_quality)
+        self.assertEqual(loaded.output_resolution, preset.output_resolution)
+        self.assertEqual(loaded.resize_mode, preset.resize_mode)
+        self.assertEqual(loaded.custom_output_width, preset.custom_output_width)
+        self.assertEqual(loaded.custom_output_height, preset.custom_output_height)
         self.assertEqual(loaded.logo_image_path, preset.logo_image_path)
         self.assertEqual(loaded.selection, preset.selection)
 
@@ -54,6 +63,27 @@ class PresetStoreTests(unittest.TestCase):
         self.assertEqual(saved_path, export_path)
         self.assertEqual(loaded.name, "Zoom Preset")
         self.assertEqual(loaded.processing_mode, "Zoom/crop")
+
+    def test_load_preset_without_resolution_fields_uses_defaults(self):
+        legacy_payload = {
+            "preset_name": "Legacy Preset",
+            "processing_mode": "Blur selected area",
+            "blur_strength": 9,
+            "zoom_percentage": 110,
+            "encoder_preference": "CPU - libx264",
+            "output_quality": "Balanced",
+        }
+
+        with TemporaryDirectory() as temp_dir:
+            preset_path = Path(temp_dir) / "legacy.json"
+            preset_path.write_text(json.dumps(legacy_payload), encoding="utf-8")
+            store = PresetStore(Path(temp_dir))
+            loaded = store.load_preset(preset_path)
+
+        self.assertEqual(loaded.output_resolution, "1080x1920")
+        self.assertEqual(loaded.resize_mode, "Fill & Crop")
+        self.assertEqual(loaded.custom_output_width, 1080)
+        self.assertEqual(loaded.custom_output_height, 1920)
 
 
 if __name__ == "__main__":

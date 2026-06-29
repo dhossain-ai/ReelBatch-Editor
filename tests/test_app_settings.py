@@ -5,6 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from core.app_settings import AppSettings, AppSettingsStore
+from core.output_resolution import DEFAULT_OUTPUT_RESOLUTION, DEFAULT_RESIZE_MODE
 
 
 class AppSettingsStoreTests(unittest.TestCase):
@@ -16,6 +17,10 @@ class AppSettingsStoreTests(unittest.TestCase):
         self.assertEqual(settings.last_zoom_percentage, 110)
         self.assertEqual(settings.last_blur_strength, 10)
         self.assertEqual(settings.last_output_quality, "Balanced")
+        self.assertEqual(settings.last_output_resolution, DEFAULT_OUTPUT_RESOLUTION)
+        self.assertEqual(settings.last_resize_mode, DEFAULT_RESIZE_MODE)
+        self.assertEqual(settings.last_custom_output_width, 1080)
+        self.assertEqual(settings.last_custom_output_height, 1920)
 
     def test_save_and_load_round_trip(self):
         expected = AppSettings(
@@ -25,6 +30,10 @@ class AppSettingsStoreTests(unittest.TestCase):
             last_zoom_percentage=124,
             last_blur_strength=7,
             last_output_quality="High Quality",
+            last_output_resolution="1440x2560",
+            last_resize_mode="Fit with Padding",
+            last_custom_output_width=864,
+            last_custom_output_height=1536,
         )
 
         with TemporaryDirectory() as temp_dir:

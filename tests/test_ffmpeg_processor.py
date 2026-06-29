@@ -17,8 +17,15 @@ from core.ffmpeg_processor import (
     OUTPUT_QUALITY_HIGH,
     OUTPUT_SUFFIX_BRANDED,
     OUTPUT_SUFFIX_ZOOMED,
+    build_mode_output_suffix,
     build_output_path,
     get_encoder_quality_arguments,
+)
+from core.output_resolution import (
+    OUTPUT_RESOLUTION_1080X1920,
+    RESIZE_MODE_FILL_AND_CROP,
+    RESIZE_MODE_FIT_WITH_PADDING,
+    build_output_standardization,
 )
 from core.selection import NormalizedSelection, normalized_selection_to_pixel_rect
 
@@ -85,6 +92,40 @@ class FFmpegProcessorTests(unittest.TestCase):
         self.assertIn(ENCODER_LIBX264, command)
         self.assertEqual(command[-1], "output.mp4")
 
+    def test_build_blur_command_appends_fill_crop_output_standardization(self):
+        processor = FFmpegProcessor(ffmpeg_path="ffmpeg")
+        selection = NormalizedSelection(
+            x_percent=83.333333,
+            y_percent=2.083333,
+            width_percent=12.962963,
+            height_percent=6.25,
+        )
+        output_standardization = build_output_standardization(
+            OUTPUT_RESOLUTION_1080X1920,
+            RESIZE_MODE_FILL_AND_CROP,
+        )
+
+        command = processor.build_blur_command(
+            input_path=Path("input.mp4"),
+            output_path=Path("output.mp4"),
+            selection=selection,
+            video_width=720,
+            video_height=1280,
+            blur_strength=12,
+            encoder=ENCODER_LIBX264,
+            output_standardization=output_standardization,
+        )
+
+        filter_index = command.index("-filter_complex") + 1
+        self.assertEqual(
+            command[filter_index],
+            "[0:v]split[base][tmp];"
+            "[tmp]crop=w=94:h=80:x=600:y=27,boxblur=12:1[blurred];"
+            "[base][blurred]overlay=x=600:y=27[preoutv];"
+            "[preoutv]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,"
+            "crop=1080:1920[outv]",
+        )
+
     def test_output_filename_collision_adds_numeric_suffix(self):
         with TemporaryDirectory() as temp_dir:
             output_dir = Path(temp_dir)
@@ -114,6 +155,16 @@ class FFmpegProcessorTests(unittest.TestCase):
 
             self.assertEqual(branded_output.name, "video_branded.mp4")
             self.assertEqual(zoomed_output.name, "video_zoomed.mp4")
+
+    def test_output_suffix_includes_standardized_resolution_when_requested(self):
+        output_standardization = build_output_standardization(
+            OUTPUT_RESOLUTION_1080X1920,
+            RESIZE_MODE_FILL_AND_CROP,
+        )
+
+        suffix = build_mode_output_suffix("_blurred", output_standardization)
+
+        self.assertEqual(suffix, "_blurred_1080x1920")
 
     def test_build_logo_overlay_command_contains_scaled_overlay_filter(self):
         processor = FFmpegProcessor(ffmpeg_path="ffmpeg")
@@ -165,6 +216,54 @@ class FFmpegProcessorTests(unittest.TestCase):
         self.assertIn("0:a?", command)
         self.assertIn(ENCODER_LIBX264, command)
         self.assertEqual(command[-1], "output.mp4")
+
+    def test_build_zoom_crop_command_appends_fit_padding_standardization(self):
+        processor = FFmpegProcessor(ffmpeg_path="ffmpeg")
+        output_standardization = build_output_standardization(
+            OUTPUT_RESOLUTION_1080X1920,
+            RESIZE_MODE_FIT_WITH_PADDING,
+        )
+
+        command = processor.build_zoom_crop_command(
+            input_path=Path("input.mp4"),
+            output_path=Path("output.mp4"),
+            video_width=720,
+            video_height=1280,
+            zoom_percent=100,
+            encoder=ENCODER_LIBX264,
+            output_standardization=output_standardization,
+        )
+
+        filter_index = command.index("-filter_complex") + 1
+        self.assertEqual(
+            command[filter_index],
+            "[0:v]scale=720:1280,crop=720:1280:(iw-720)/2:(ih-1280)/2[preoutv];"
+            "[preoutv]scale=1080:1920:force_original_aspect_ratio=decrease:flags=lanczos,"
+            "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black[outv]",
+        )
+
+    def test_keep_original_does_not_append_output_standardization_filter(self):
+        processor = FFmpegProcessor(ffmpeg_path="ffmpeg")
+        selection = NormalizedSelection(
+            x_percent=83.333333,
+            y_percent=2.083333,
+            width_percent=12.962963,
+            height_percent=6.25,
+        )
+
+        command = processor.build_blur_command(
+            input_path=Path("input.mp4"),
+            output_path=Path("output.mp4"),
+            selection=selection,
+            video_width=1080,
+            video_height=1920,
+            blur_strength=12,
+            encoder=ENCODER_LIBX264,
+            output_standardization=None,
+        )
+
+        filter_index = command.index("-filter_complex") + 1
+        self.assertNotIn("force_original_aspect_ratio", command[filter_index])
 
     def test_quality_mapping_for_libx264_profiles(self):
         self.assertEqual(
