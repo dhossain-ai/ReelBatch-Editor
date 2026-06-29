@@ -30,6 +30,9 @@ ReelBatch Editor automates this process by letting you:
 - **Batch export** - Process all videos automatically with progress display
 - **Background processing** - UI remains responsive during export
 - **Preset save/load** - Save your selections and settings for reuse
+- **Remembered workflow settings** - Restore your last mode, encoder, quality, sliders, and output folder on next launch
+- **Output quality presets** - Choose Fast, Balanced, or High Quality without manual bitrate tuning
+- **Export logs and polished summaries** - Save compact batch logs and open the output folder directly after export
 
 ## Tech Stack
 
@@ -71,7 +74,7 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed roadmap.
 
 ## Current Status
 
-**Stage:** Phase 6 complete - all MVP export modes are now implemented end-to-end.
+**Stage:** Phase 7 complete - presets, workflow persistence, and export polish are now implemented.
 
 **Progress:**
 - [x] GitHub repository initialized
@@ -84,9 +87,13 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed roadmap.
 - [x] FFmpeg blur, logo/image overlay, and zoom/crop export workflows
 - [x] Output folder selection and collision-safe output naming
 - [x] Auto encoder selection with NVENC-to-libx264 fallback
+- [x] JSON preset save/load with optional preset export/import
+- [x] Persistent app settings for mode, encoder, quality, sliders, and output folder
+- [x] Output quality presets for Fast, Balanced, and High Quality
+- [x] Export summary polish with output-folder opening and compact log files
 - [ ] Windows EXE packaging
 
-The app now supports importing multiple videos, drawing a reusable normalized selection, choosing a blur/logo/zoom processing mode, and exporting MP4 outputs in the background while keeping the UI responsive.
+The app now supports importing multiple videos, drawing a reusable normalized selection, choosing a blur/logo/zoom processing mode, saving reusable presets, remembering the last workflow settings, and exporting MP4 outputs in the background while keeping the UI responsive.
 
 See [docs/STATUS.md](docs/STATUS.md) for detailed task checklist.
 

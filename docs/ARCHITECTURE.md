@@ -57,6 +57,8 @@ reelbatch-editor/
 - Manages application state
 - Handles menu actions and global commands
 - Coordinates between video list, preview, and controls
+- Restores persisted app settings at startup and saves them when relevant controls change
+- Applies presets to the preview selection, processing mode, sliders, encoder, quality, and logo/image path
 
 #### PreviewCanvas
 - Displays video preview frame
@@ -75,6 +77,8 @@ reelbatch-editor/
 - Processing mode selector (blur/logo/zoom)
 - Settings panels for each mode
 - Validates mode-specific requirements (selection, overlay image, zoom-only export)
+- Offers output quality presets (Fast/Balanced/High Quality)
+- Surfaces mode-specific help text, slider values, and tooltips without redesigning the layout
 - Export button and progress indicator
 - Output folder picker
 
@@ -88,6 +92,7 @@ reelbatch-editor/
   - Logo overlay: Scales the selected image to fit the target rectangle, pads transparently when needed, then uses FFmpeg `overlay`
   - Zoom/crop: Scales the full frame up according to the zoom percentage, then center-crops back to the original dimensions
 - Generates encoder-specific commands (NVENC vs CPU)
+- Maps output-quality presets to encoder-specific preset/CRF/CQ arguments
 - Resolves Auto encoder mode by preferring `h264_nvenc` and falling back to `libx264` when needed
 
 #### Worker
@@ -99,6 +104,7 @@ reelbatch-editor/
 - Ensures UI remains responsive during export
 - Continues exporting later files even if one file fails
 - Dispatches blur, logo/image, and zoom/crop exports through the same encoder/fallback pipeline
+- Writes compact timestamped export logs to a user-writable logs folder
 
 #### Preview
 - Extracts first frame from video using OpenCV
@@ -124,6 +130,7 @@ reelbatch-editor/
 - Stores processing mode
 - Stores mode-specific settings
 - Serializable to/from JSON
+- Saves to the user's app-data presets folder by default and can also be exported/imported as standalone JSON files
 
 ### Utilities
 
@@ -143,6 +150,11 @@ reelbatch-editor/
 - Stores recent paths
 - Stores user preferences
 - Persists to JSON/config file
+
+#### Logging
+- Writes timestamped batch export logs in app data
+- Records export start/end, selected mode, encoder request, fallback events, and FFmpeg error snippets
+- Keeps log files compact enough to be practical for debugging
 
 ## Data Flow
 
@@ -166,8 +178,10 @@ reelbatch-editor/
 9. Worker generates the per-video FFmpeg command for the selected mode via Processor
 10. Worker executes FFmpeg in subprocess
 11. If Auto mode fails on NVENC, Worker retries that file with `libx264`
-12. UI updates progress bar and status text
-13. On completion, Worker signals success/failure summary back to MainWindow
+12. Worker writes compact log events for export start/end, per-file results, fallback usage, and failure snippets
+13. UI updates progress bar and status text
+14. On completion, Worker signals success/failure summary back to MainWindow
+15. MainWindow shows a compact completion dialog with totals, fallback count, output folder, and log file path
 
 ## Threading Model
 
@@ -244,9 +258,10 @@ The application scans the encoder list for:
 - User preferences
 
 ### Persistence
-- Presets saved to JSON
-- Recent paths saved to config
-- Selection auto-saved per session
+- Presets saved to JSON in a writable app-data presets folder
+- App settings saved to a writable JSON config file
+- Presets can be exported/imported through ordinary JSON files
+- Export logs saved to a writable logs folder
 
 ## Security Considerations
 

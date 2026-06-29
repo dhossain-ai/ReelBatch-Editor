@@ -71,6 +71,7 @@ Test cases:
 - [x] Use normalized coordinates in commands
 - [x] Generate NVENC commands when GPU available
 - [x] Generate CPU commands as fallback
+- [x] Map quality presets to encoder-specific arguments
 - [ ] Escape special characters in paths
 - [ ] Handle paths with spaces
 
@@ -78,12 +79,21 @@ Test cases:
 **File:** `tests/test_preset.py`
 
 Test cases:
-- [ ] Create preset with selection and mode
-- [ ] Serialize preset to JSON
-- [ ] Deserialize preset from JSON
+- [x] Create preset with selection and mode
+- [x] Serialize preset to JSON
+- [x] Deserialize preset from JSON
 - [ ] Handle missing or invalid preset files
 - [ ] Validate preset data structure
 - [ ] Copy/clone preset
+
+### Settings Persistence Tests
+**File:** `tests/test_app_settings.py`
+
+Test cases:
+- [x] Load default settings when no settings file exists
+- [x] Save app settings to JSON
+- [x] Restore app settings from JSON
+- [ ] Handle invalid settings files gracefully
 
 ## Integration Tests
 
@@ -178,6 +188,8 @@ Test cases:
 - [ ] Blur intensity slider works
 - [ ] Logo file picker works
 - [ ] Zoom percentage slider works
+- [ ] Output quality dropdown works
+- [ ] Tooltips appear on key controls
 - [x] Output folder picker works
 - [ ] Export button is enabled when ready
 
@@ -189,6 +201,31 @@ Test cases:
 - [x] Success message appears on completion
 - [x] Error message appears on failure
 - [ ] Output folder opens on completion (optional)
+
+### Phase 7 Manual Workflow Tests
+
+#### Preset Save/Load
+1. [ ] Launch the app and import at least one video
+2. [ ] Draw a rectangle selection and choose a processing mode
+3. [ ] Adjust blur/zoom, encoder, and output quality controls
+4. [ ] Click `Save Preset`, enter a preset name, and confirm it saves without errors
+5. [ ] Optionally export a copy of the preset JSON to another location
+6. [ ] Change the mode, sliders, encoder, quality, and selection
+7. [ ] Click `Load Preset` and choose the saved preset JSON
+8. [ ] Confirm the preview selection, mode, sliders, encoder, quality, and logo/image path are restored
+9. [ ] Load a preset whose stored logo/image path no longer exists and confirm a friendly warning appears
+
+#### Settings Persistence
+1. [ ] Set a custom output folder, encoder, mode, blur strength, zoom percentage, and quality
+2. [ ] Close the app
+3. [ ] Relaunch the app
+4. [ ] Confirm the previous output folder, encoder, mode, blur strength, zoom percentage, and quality are restored
+
+#### Export Summary And Logs
+1. [ ] Run a successful export and confirm the final summary shows total, successful, failed, fallback count when applicable, output folder, and log file path
+2. [ ] Confirm the summary offers an `Open Output Folder` action when the folder exists
+3. [ ] Open the generated log file and confirm it includes export start/end, selected mode, encoder request, input paths, output paths, and any fallback events
+4. [ ] Trigger a failed export and confirm the log file contains a compact FFmpeg error snippet rather than a huge raw dump
 
 ### Phase 6 Manual Export Tests
 
@@ -237,6 +274,7 @@ Test cases:
 4. [ ] Switch to `Cover with logo/image` without selecting a logo/image and confirm a readable validation error
 5. [ ] Switch to `Cover with logo/image` with an unsupported image type and confirm a readable validation error
 6. [ ] Switch to `Zoom/crop` without a selection and confirm export is allowed
+7. [ ] Confirm `Fast`, `Balanced`, and `High Quality` all export successfully for at least one processing mode
 
 #### Encoder Behavior
 1. [ ] With FFmpeg unavailable on PATH, confirm the app shows a clear FFmpeg error and does not crash
@@ -255,6 +293,7 @@ Test cases:
 1. [ ] Export a batch where one file is intentionally invalid or unreadable
 2. [ ] Confirm the remaining files still export
 3. [ ] Confirm the final summary includes success and failure counts without dumping huge FFmpeg logs
+4. [ ] Confirm the log file is saved and includes the failure snippet for the bad file
 
 ### User Experience Tests
 

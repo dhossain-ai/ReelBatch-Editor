@@ -2,7 +2,7 @@
 
 ## Current Stage
 
-Phase 6: All MVP export modes complete. Ready for preset polish and packaging work.
+Phase 7: Workflow polish complete. Ready for packaging prep and broader smoke testing.
 
 ## Phase 2 Completed (UI Skeleton)
 
@@ -81,16 +81,30 @@ Phase 6: All MVP export modes complete. Ready for preset polish and packaging wo
 - [x] Updated the UI validation and status messaging for all three processing modes
 - [x] Added unit tests for logo overlay, zoom/crop, validation rules, and filename suffix behavior
 
+## Phase 7 Completed (Presets + Settings + Export Polish)
+
+- [x] Added a JSON-based preset system stored in a user-writable app-data presets folder
+- [x] Enabled Save Preset and Load Preset buttons with optional preset JSON export/import
+- [x] Restored selection, mode, sliders, encoder, quality, and logo/image path from presets
+- [x] Added persistent app settings for output folder, encoder, mode, blur, zoom, and quality
+- [x] Added output quality presets for Fast, Balanced, and High Quality exports
+- [x] Mapped quality presets to sensible `libx264` CRF/preset and `h264_nvenc` CQ/preset settings
+- [x] Added timestamped export log files in a user-writable logs folder
+- [x] Improved final export summaries with totals, failures, fallback counts, output folder, and log file path
+- [x] Added an Open Output Folder action after export when the output directory exists
+- [x] Polished mode-specific UI hints, disabled states, slider value readouts, and tooltips
+- [x] Added unit tests for presets, settings persistence, quality mapping, and summary formatting
+
 ## Current Goal
 
-Polish presets, expand manual verification, and prepare the Windows packaging step.
+Prepare for packaging, expand manual export verification, and continue MVP hardening.
 
 ## Next Steps
 
-1. Persist selection and mode settings in presets
-2. Improve export reporting and optional cancellation controls
-3. Package the Windows build after export modes are complete
-4. Expand smoke testing across more sample video resolutions and aspect ratios
+1. Package the Windows build after export modes are complete
+2. Expand smoke testing across more sample video resolutions and aspect ratios
+3. Evaluate optional cancellation controls after manual export validation
+4. Add release-oriented verification around presets, logs, and settings migration
 
 ## MVP Features
 
