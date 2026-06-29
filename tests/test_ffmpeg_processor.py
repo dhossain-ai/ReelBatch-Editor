@@ -141,6 +141,27 @@ class FFmpegProcessorTests(unittest.TestCase):
         self.assertIn("0:a?", command)
         self.assertIn(ENCODER_LIBX264, command)
 
+    def test_build_zoom_crop_command_contains_center_crop_filter(self):
+        processor = FFmpegProcessor(ffmpeg_path="ffmpeg")
+
+        command = processor.build_zoom_crop_command(
+            input_path=Path("input.mp4"),
+            output_path=Path("output.mp4"),
+            video_width=1080,
+            video_height=1920,
+            zoom_percent=108,
+            encoder=ENCODER_LIBX264,
+        )
+
+        filter_index = command.index("-filter_complex") + 1
+        self.assertEqual(
+            command[filter_index],
+            "[0:v]scale=1166:2074,crop=1080:1920:(iw-1080)/2:(ih-1920)/2[outv]",
+        )
+        self.assertIn("0:a?", command)
+        self.assertIn(ENCODER_LIBX264, command)
+        self.assertEqual(command[-1], "output.mp4")
+
     def test_resolve_encoder_plan_auto_prefers_nvenc_and_falls_back_to_cpu(self):
         processor = FFmpegProcessor()
         availability = EncoderAvailability(frozenset({ENCODER_H264_NVENC, ENCODER_LIBX264}))
