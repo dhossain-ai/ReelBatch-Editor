@@ -27,6 +27,7 @@ class ExportSettings:
     processing_mode: str
     blur_strength: int = 10
     zoom_percent: int = 100
+    output_quality: str = "Balanced"
     selection: Optional[NormalizedSelection] = None
     overlay_image_path: Optional[Path] = None
 
@@ -147,6 +148,7 @@ class ExportWorker(QObject):
                 output_directory=self._output_directory,
                 blur_strength=self._settings.blur_strength,
                 encoder_plan=self._encoder_plan,
+                output_quality=self._settings.output_quality,
             )
 
         if self._settings.processing_mode == PROCESSING_MODE_LOGO:
@@ -160,6 +162,7 @@ class ExportWorker(QObject):
                 overlay_image_path=self._settings.overlay_image_path,
                 output_directory=self._output_directory,
                 encoder_plan=self._encoder_plan,
+                output_quality=self._settings.output_quality,
             )
 
         if self._settings.processing_mode == PROCESSING_MODE_ZOOM:
@@ -168,6 +171,7 @@ class ExportWorker(QObject):
                 output_directory=self._output_directory,
                 zoom_percent=self._settings.zoom_percent,
                 encoder_plan=self._encoder_plan,
+                output_quality=self._settings.output_quality,
             )
 
         raise ValueError(f"Unsupported processing mode: {self._settings.processing_mode}")

@@ -20,6 +20,7 @@ class AppSettings:
     last_processing_mode: str = ""
     last_zoom_percentage: int = 110
     last_blur_strength: int = 10
+    last_output_quality: str = "Balanced"
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-friendly representation."""
@@ -29,6 +30,7 @@ class AppSettings:
             "last_processing_mode": self.last_processing_mode,
             "last_zoom_percentage": int(self.last_zoom_percentage),
             "last_blur_strength": int(self.last_blur_strength),
+            "last_output_quality": self.last_output_quality,
         }
 
     @classmethod
@@ -44,6 +46,7 @@ class AppSettings:
             last_processing_mode=str(payload.get("last_processing_mode", "")),
             last_zoom_percentage=int(payload.get("last_zoom_percentage", 110)),
             last_blur_strength=int(payload.get("last_blur_strength", 10)),
+            last_output_quality=str(payload.get("last_output_quality", "Balanced")),
         )
 
 

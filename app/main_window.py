@@ -19,6 +19,8 @@ from core.ffmpeg_processor import (
     ENCODER_OPTION_CPU,
     ENCODER_OPTION_NVIDIA,
     FFmpegProcessor,
+    OUTPUT_QUALITY_BALANCED,
+    OUTPUT_QUALITY_OPTIONS,
 )
 from core.presets import ExportPreset, PresetStore
 from core.processing_modes import (
@@ -228,6 +230,31 @@ class MainWindow(QMainWindow):
             }
         """)
         right_layout.addWidget(self.encoder_combo)
+
+        # Output Quality
+        right_layout.addWidget(QLabel("Output Quality:"))
+        self.output_quality_combo = QComboBox()
+        self.output_quality_combo.addItems(list(OUTPUT_QUALITY_OPTIONS))
+        self.output_quality_combo.setCurrentText(OUTPUT_QUALITY_BALANCED)
+        self.output_quality_combo.setStyleSheet("""
+            QComboBox {
+                background-color: #3a3a3a;
+                color: #e0e0e0;
+                border: 1px solid #4a4a4a;
+                border-radius: 4px;
+                padding: 6px;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 5px solid #e0e0e0;
+            }
+        """)
+        right_layout.addWidget(self.output_quality_combo)
         
         # Output Folder
         self.output_button = QPushButton("Select Output Folder")
@@ -459,6 +486,7 @@ class MainWindow(QMainWindow):
         self.blur_slider.valueChanged.connect(self.on_persistent_setting_changed)
         self.zoom_slider.valueChanged.connect(self.on_persistent_setting_changed)
         self.encoder_combo.currentTextChanged.connect(self.on_persistent_setting_changed)
+        self.output_quality_combo.currentTextChanged.connect(self.on_persistent_setting_changed)
         
         # Export signal
         self.export_button.clicked.connect(self.on_export)
@@ -599,6 +627,7 @@ class MainWindow(QMainWindow):
             blur_strength=self.blur_slider.value(),
             zoom_percentage=self.zoom_slider.value(),
             encoder_preference=self.encoder_combo.currentText(),
+            output_quality=self.output_quality_combo.currentText(),
             selection=self.current_selection,
             logo_image_path=str(self.logo_image_path) if self.logo_image_path else None,
         )
@@ -610,6 +639,7 @@ class MainWindow(QMainWindow):
         self.blur_slider.setValue(preset.blur_strength)
         self.zoom_slider.setValue(preset.zoom_percentage)
         self.encoder_combo.setCurrentText(preset.encoder_preference)
+        self.output_quality_combo.setCurrentText(preset.output_quality)
 
         if preset.logo_image_path:
             stored_logo_path = Path(preset.logo_image_path)
@@ -729,6 +759,7 @@ class MainWindow(QMainWindow):
             last_processing_mode=self.processing_mode.currentText(),
             last_zoom_percentage=self.zoom_slider.value(),
             last_blur_strength=self.blur_slider.value(),
+            last_output_quality=self.output_quality_combo.currentText(),
         )
 
     def load_app_settings(self) -> None:
@@ -745,6 +776,8 @@ class MainWindow(QMainWindow):
                 self.processing_mode.setCurrentText(settings.last_processing_mode)
             if settings.last_encoder_selection:
                 self.encoder_combo.setCurrentText(settings.last_encoder_selection)
+            if settings.last_output_quality:
+                self.output_quality_combo.setCurrentText(settings.last_output_quality)
             self.zoom_slider.setValue(settings.last_zoom_percentage)
             self.blur_slider.setValue(settings.last_blur_strength)
             if settings.last_output_folder:
@@ -826,6 +859,7 @@ class MainWindow(QMainWindow):
             processing_mode=mode,
             blur_strength=self.blur_slider.value(),
             zoom_percent=self.zoom_slider.value(),
+            output_quality=self.output_quality_combo.currentText(),
             selection=self.current_selection,
             overlay_image_path=self.logo_image_path,
         )

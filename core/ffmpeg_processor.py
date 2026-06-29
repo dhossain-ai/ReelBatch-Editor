@@ -21,6 +21,16 @@ ENCODER_H264_QSV = "h264_qsv"
 ENCODER_H264_AMF = "h264_amf"
 ENCODER_LIBX264 = "libx264"
 
+OUTPUT_QUALITY_FAST = "Fast"
+OUTPUT_QUALITY_BALANCED = "Balanced"
+OUTPUT_QUALITY_HIGH = "High Quality"
+
+OUTPUT_QUALITY_OPTIONS = (
+    OUTPUT_QUALITY_FAST,
+    OUTPUT_QUALITY_BALANCED,
+    OUTPUT_QUALITY_HIGH,
+)
+
 SUPPORTED_ENCODERS = {
     ENCODER_H264_NVENC,
     ENCODER_H264_QSV,
@@ -165,6 +175,7 @@ class FFmpegProcessor:
         video_height: int,
         blur_strength: int,
         encoder: str,
+        output_quality: str = OUTPUT_QUALITY_BALANCED,
     ) -> list[str]:
         """Build an FFmpeg command that blurs the selected region and writes MP4 output."""
         input_file = Path(input_path)
@@ -188,7 +199,7 @@ class FFmpegProcessor:
             "-pix_fmt",
             "yuv420p",
         ]
-        command.extend(self._build_output_arguments(encoder, output_file))
+        command.extend(self._build_output_arguments(encoder, output_file, output_quality))
         return command
 
     def build_logo_overlay_command(
@@ -200,6 +211,7 @@ class FFmpegProcessor:
         video_width: int,
         video_height: int,
         encoder: str,
+        output_quality: str = OUTPUT_QUALITY_BALANCED,
     ) -> list[str]:
         """Build an FFmpeg command that overlays a scaled logo/image on the selected region."""
         input_file = Path(input_path)
@@ -226,7 +238,7 @@ class FFmpegProcessor:
             "-pix_fmt",
             "yuv420p",
         ]
-        command.extend(self._build_output_arguments(encoder, output_file))
+        command.extend(self._build_output_arguments(encoder, output_file, output_quality))
         return command
 
     def build_zoom_crop_command(
@@ -237,6 +249,7 @@ class FFmpegProcessor:
         video_height: int,
         zoom_percent: int,
         encoder: str,
+        output_quality: str = OUTPUT_QUALITY_BALANCED,
     ) -> list[str]:
         """Build an FFmpeg command that scales and center-crops back to the original size."""
         input_file = Path(input_path)
@@ -259,7 +272,7 @@ class FFmpegProcessor:
             "-pix_fmt",
             "yuv420p",
         ]
-        command.extend(self._build_output_arguments(encoder, output_file))
+        command.extend(self._build_output_arguments(encoder, output_file, output_quality))
         return command
 
     def export_blur_video(
@@ -269,6 +282,7 @@ class FFmpegProcessor:
         output_directory: Path | str,
         blur_strength: int,
         encoder_plan: EncoderPlan,
+        output_quality: str = OUTPUT_QUALITY_BALANCED,
     ) -> ExportResult:
         """Export one blurred video, retrying with CPU when Auto NVENC fails."""
         output_path = build_output_path(
@@ -288,6 +302,7 @@ class FFmpegProcessor:
                 video_height=video_info.height,
                 blur_strength=blur_strength,
                 encoder=encoder,
+                output_quality=output_quality,
             )
         )
 
@@ -298,6 +313,7 @@ class FFmpegProcessor:
         overlay_image_path: Path | str,
         output_directory: Path | str,
         encoder_plan: EncoderPlan,
+        output_quality: str = OUTPUT_QUALITY_BALANCED,
     ) -> ExportResult:
         """Export one video with a scaled logo/image overlay."""
         output_path = build_output_path(
@@ -317,6 +333,7 @@ class FFmpegProcessor:
                 video_width=video_info.width,
                 video_height=video_info.height,
                 encoder=encoder,
+                output_quality=output_quality,
             )
         )
 
@@ -326,6 +343,7 @@ class FFmpegProcessor:
         output_directory: Path | str,
         zoom_percent: int,
         encoder_plan: EncoderPlan,
+        output_quality: str = OUTPUT_QUALITY_BALANCED,
     ) -> ExportResult:
         """Export one video with a centered zoom/crop effect."""
         output_path = build_output_path(
@@ -344,6 +362,7 @@ class FFmpegProcessor:
                 video_height=video_info.height,
                 zoom_percent=zoom_percent,
                 encoder=encoder,
+                output_quality=output_quality,
             ),
         )
 
@@ -410,8 +429,13 @@ class FFmpegProcessor:
         return run(command, capture_output=True, text=True, check=False)
 
     @classmethod
-    def _build_output_arguments(cls, encoder: str, output_file: Path) -> list[str]:
-        output_arguments = cls._encoder_arguments(encoder)
+    def _build_output_arguments(
+        cls,
+        encoder: str,
+        output_file: Path,
+        output_quality: str,
+    ) -> list[str]:
+        output_arguments = cls._encoder_arguments(encoder, output_quality)
         output_arguments.extend(
             [
                 "-c:a",
@@ -426,12 +450,32 @@ class FFmpegProcessor:
         return output_arguments
 
     @staticmethod
-    def _encoder_arguments(encoder: str) -> list[str]:
-        if encoder == ENCODER_H264_NVENC:
-            return ["-preset", "p5", "-cq", "23"]
-        if encoder == ENCODER_LIBX264:
-            return ["-preset", "medium", "-crf", "23"]
+    def _encoder_arguments(encoder: str, output_quality: str) -> list[str]:
+        return get_encoder_quality_arguments(encoder, output_quality)
+
+
+def get_encoder_quality_arguments(encoder: str, output_quality: str) -> list[str]:
+    """Return codec arguments for the selected encoder and quality preset."""
+    quality_profiles = {
+        ENCODER_H264_NVENC: {
+            OUTPUT_QUALITY_FAST: ["-preset", "p4", "-cq", "28"],
+            OUTPUT_QUALITY_BALANCED: ["-preset", "p5", "-cq", "23"],
+            OUTPUT_QUALITY_HIGH: ["-preset", "p7", "-cq", "19"],
+        },
+        ENCODER_LIBX264: {
+            OUTPUT_QUALITY_FAST: ["-preset", "veryfast", "-crf", "25"],
+            OUTPUT_QUALITY_BALANCED: ["-preset", "medium", "-crf", "23"],
+            OUTPUT_QUALITY_HIGH: ["-preset", "slow", "-crf", "20"],
+        },
+    }
+
+    encoder_profiles = quality_profiles.get(encoder)
+    if not encoder_profiles:
         return []
+
+    if output_quality not in encoder_profiles:
+        output_quality = OUTPUT_QUALITY_BALANCED
+    return list(encoder_profiles[output_quality])
 
 
 def build_blur_filter(pixel_rect: PixelSelection, blur_strength: int) -> str:
