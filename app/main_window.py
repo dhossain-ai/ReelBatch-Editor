@@ -144,6 +144,11 @@ class MainWindow(QMainWindow):
             }
         """)
         right_layout.addWidget(self.processing_mode)
+
+        self.mode_help_label = QLabel(processing_mode_status_text(self.processing_mode.currentText()))
+        self.mode_help_label.setStyleSheet("color: #9a9a9a; font-size: 12px;")
+        self.mode_help_label.setWordWrap(True)
+        right_layout.addWidget(self.mode_help_label)
         
         # Blur Strength
         right_layout.addWidget(QLabel("Blur Strength:"))
@@ -165,6 +170,10 @@ class MainWindow(QMainWindow):
             }
         """)
         right_layout.addWidget(self.blur_slider)
+
+        self.blur_value_label = QLabel("10")
+        self.blur_value_label.setStyleSheet("color: #9a9a9a; font-size: 12px;")
+        right_layout.addWidget(self.blur_value_label)
         
         # Logo/Image Picker
         self.logo_button = QPushButton("Select Logo/Image")
@@ -211,6 +220,10 @@ class MainWindow(QMainWindow):
             }
         """)
         right_layout.addWidget(self.zoom_slider)
+
+        self.zoom_value_label = QLabel("110%")
+        self.zoom_value_label.setStyleSheet("color: #9a9a9a; font-size: 12px;")
+        right_layout.addWidget(self.zoom_value_label)
         
         # Encoder Selection
         right_layout.addWidget(QLabel("Encoder:"))
@@ -329,8 +342,8 @@ class MainWindow(QMainWindow):
         
         right_layout.addLayout(preset_layout)
 
-        selection_section = QFrame()
-        selection_section.setStyleSheet("""
+        self.selection_section = QFrame()
+        self.selection_section.setStyleSheet("""
             QFrame {
                 background-color: #2d2d2d;
                 border: 1px solid #3a3a3a;
@@ -338,13 +351,18 @@ class MainWindow(QMainWindow):
                 padding: 10px;
             }
         """)
-        selection_layout = QVBoxLayout(selection_section)
+        selection_layout = QVBoxLayout(self.selection_section)
         selection_layout.setContentsMargins(12, 12, 12, 12)
         selection_layout.setSpacing(10)
 
         selection_title = QLabel("Selection")
         selection_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #ffffff;")
         selection_layout.addWidget(selection_title)
+
+        self.selection_requirement_label = QLabel("Required for blur and logo/image modes")
+        self.selection_requirement_label.setStyleSheet("color: #9a9a9a; font-size: 12px;")
+        self.selection_requirement_label.setWordWrap(True)
+        selection_layout.addWidget(self.selection_requirement_label)
 
         selection_grid = QGridLayout()
         selection_grid.setHorizontalSpacing(12)
@@ -400,7 +418,7 @@ class MainWindow(QMainWindow):
         """)
         selection_layout.addWidget(self.clear_selection_button)
 
-        right_layout.addWidget(selection_section)
+        right_layout.addWidget(self.selection_section)
         
         right_layout.addStretch()
         content_layout.addWidget(right_panel)
@@ -495,6 +513,10 @@ class MainWindow(QMainWindow):
         
         # Export signal
         self.export_button.clicked.connect(self.on_export)
+        self.blur_slider.valueChanged.connect(self.update_slider_labels)
+        self.zoom_slider.valueChanged.connect(self.update_slider_labels)
+        self.apply_tooltips()
+        self.update_slider_labels()
     
     def on_add_videos(self):
         """Handler for add videos button - opens file dialog and imports videos."""
@@ -756,6 +778,11 @@ class MainWindow(QMainWindow):
         self.update_mode_controls(mode)
         self.status_label.setText(processing_mode_status_text(mode))
 
+    def update_slider_labels(self, *_args) -> None:
+        """Keep the slider value labels in sync with the current controls."""
+        self.blur_value_label.setText(f"{self.blur_slider.value()}")
+        self.zoom_value_label.setText(f"{self.zoom_slider.value()}%")
+
     def build_app_settings(self) -> AppSettings:
         """Capture the currently persistent UI state."""
         return AppSettings(
@@ -809,9 +836,47 @@ class MainWindow(QMainWindow):
         is_zoom_mode = mode == PROCESSING_MODE_ZOOM
 
         self.blur_slider.setEnabled(is_blur_mode)
+        self.blur_value_label.setEnabled(is_blur_mode)
         self.logo_button.setEnabled(is_logo_mode)
         self.logo_file_label.setEnabled(is_logo_mode)
         self.zoom_slider.setEnabled(is_zoom_mode)
+        self.zoom_value_label.setEnabled(is_zoom_mode)
+        self.mode_help_label.setText(processing_mode_status_text(mode))
+
+        if is_zoom_mode:
+            self.selection_requirement_label.setText("Selection is not used in zoom/crop mode")
+            self.selection_section.setStyleSheet("""
+                QFrame {
+                    background-color: #252526;
+                    border: 1px solid #333333;
+                    border-radius: 8px;
+                    padding: 10px;
+                }
+            """)
+        else:
+            self.selection_requirement_label.setText("Required for the active mode")
+            self.selection_section.setStyleSheet("""
+                QFrame {
+                    background-color: #2d2d2d;
+                    border: 1px solid #3a3a3a;
+                    border-radius: 8px;
+                    padding: 10px;
+                }
+            """)
+
+    def apply_tooltips(self) -> None:
+        """Add lightweight guidance to the most important controls."""
+        self.processing_mode.setToolTip("Choose the batch processing mode to apply to every queued video.")
+        self.blur_slider.setToolTip("Controls how strongly the selected rectangle is blurred in blur mode.")
+        self.logo_button.setToolTip("Choose a PNG, JPG, JPEG, or WEBP file to overlay in logo/image mode.")
+        self.zoom_slider.setToolTip("Scales the video up, then center-crops back to the original size in zoom mode.")
+        self.encoder_combo.setToolTip("Select Auto to prefer NVIDIA NVENC and fall back to CPU when needed.")
+        self.output_quality_combo.setToolTip("Choose a faster or higher-quality encoder preset without manual bitrate tuning.")
+        self.output_button.setToolTip("Select the folder where exported MP4 files will be written.")
+        self.save_preset_button.setToolTip("Save the current selection, mode, sliders, quality, and encoder settings as a preset.")
+        self.load_preset_button.setToolTip("Load a preset from the app-data presets folder or any exported preset JSON file.")
+        self.clear_selection_button.setToolTip("Remove the current rectangle selection from the preview.")
+        self.export_button.setToolTip("Start batch export for every queued video using the current settings.")
     
     def on_export(self):
         """Validate inputs and start a background export."""
