@@ -9,30 +9,71 @@ from typing import Optional, Sequence
 
 from PySide6.QtCore import QObject, Signal
 
+from core.export_recipe import (
+    AREA_CLEANUP_TYPE_BLUR,
+    AREA_CLEANUP_TYPE_LOGO,
+    build_recipe_summary,
+)
 from core.export_logging import ExportLogWriter, extract_ffmpeg_error_snippet
 from core.ffmpeg_processor import EncoderPlan, ExportResult, FFmpegProcessor
 from core.output_resolution import OutputStandardization
-from core.processing_modes import (
-    PROCESSING_MODE_BLUR,
-    PROCESSING_MODE_LOGO,
-    PROCESSING_MODE_ZOOM,
-    processing_mode_progress_label,
-)
 from core.selection import NormalizedSelection
 from core.video_probe import VideoInfo
 
 
 @dataclass(frozen=True)
 class ExportSettings:
-    """Mode-specific export settings shared by the worker and UI."""
+    """Recipe-based export settings shared by the worker and UI."""
 
-    processing_mode: str
+    area_cleanup_enabled: bool = False
+    cleanup_type: str = AREA_CLEANUP_TYPE_BLUR
     blur_strength: int = 10
-    zoom_percent: int = 100
+    zoom_enabled: bool = False
+    zoom_percent: int = 110
     output_quality: str = "Balanced"
     output_standardization: Optional[OutputStandardization] = None
     selection: Optional[NormalizedSelection] = None
     overlay_image_path: Optional[Path] = None
+
+    def to_recipe(self):
+        """Convert worker settings into a recipe helper object."""
+        from core.export_recipe import ExportRecipe
+
+        output_resolution = (
+            self.output_standardization.source_label
+            if self.output_standardization is not None
+            else ""
+        )
+        resize_mode = (
+            self.output_standardization.resize_mode
+            if self.output_standardization is not None
+            else ""
+        )
+        target_width = (
+            self.output_standardization.target_width
+            if self.output_standardization is not None
+            else 1080
+        )
+        target_height = (
+            self.output_standardization.target_height
+            if self.output_standardization is not None
+            else 1920
+        )
+        return ExportRecipe(
+            area_cleanup_enabled=self.area_cleanup_enabled,
+            cleanup_type=self.cleanup_type,
+            blur_strength=self.blur_strength,
+            zoom_enabled=self.zoom_enabled,
+            zoom_percent=self.zoom_percent,
+            output_standardization_enabled=self.output_standardization is not None,
+            output_resolution=output_resolution,
+            resize_mode=resize_mode,
+            custom_output_width=target_width,
+            custom_output_height=target_height,
+            output_quality=self.output_quality,
+            selection=self.selection,
+            overlay_image_path=self.overlay_image_path,
+        )
 
 
 @dataclass(frozen=True)
@@ -108,7 +149,7 @@ class ExportWorker(QObject):
         total = len(self._videos)
         self._log_writer.write_line(
             "Export batch started"
-            f" | mode={self._settings.processing_mode}"
+            f" | recipe={self.describe_recipe()}"
             f" | encoder_request={self._encoder_plan.requested_option}"
             f" | primary_encoder={self._encoder_plan.primary_encoder}"
             f" | output_quality={self._settings.output_quality}"
@@ -138,12 +179,11 @@ class ExportWorker(QObject):
             return
 
         for index, video_info in enumerate(self._videos, start=1):
-            progress_label = processing_mode_progress_label(self._settings.processing_mode)
-            self.status_changed.emit(f"{progress_label} {index}/{total}: {video_info.file_name}")
+            self.status_changed.emit(f"Exporting {index}/{total}: {video_info.file_name}")
             self._log_writer.write_line(
                 f"Processing file {index}/{total}"
                 f" | input={video_info.file_path}"
-                f" | mode={self._settings.processing_mode}"
+                f" | recipe={self.describe_recipe()}"
             )
             try:
                 result = self._export_video(video_info)
@@ -195,46 +235,27 @@ class ExportWorker(QObject):
         self.finished.emit(summary)
 
     def _export_video(self, video_info: VideoInfo) -> ExportResult:
-        """Dispatch export processing for the configured mode."""
-        if self._settings.processing_mode == PROCESSING_MODE_BLUR:
-            if self._settings.selection is None:
-                raise ValueError("Blur export requires a rectangle selection.")
-            return self._processor.export_blur_video(
-                video_info=video_info,
-                selection=self._settings.selection,
-                output_directory=self._output_directory,
-                blur_strength=self._settings.blur_strength,
-                encoder_plan=self._encoder_plan,
-                output_quality=self._settings.output_quality,
-                output_standardization=self._settings.output_standardization,
-            )
+        """Dispatch export processing for the configured recipe."""
+        area_cleanup_type: Optional[str] = None
+        if self._settings.area_cleanup_enabled:
+            area_cleanup_type = self._settings.cleanup_type
 
-        if self._settings.processing_mode == PROCESSING_MODE_LOGO:
-            if self._settings.selection is None:
-                raise ValueError("Logo/image export requires a rectangle selection.")
-            if self._settings.overlay_image_path is None:
-                raise ValueError("Logo/image export requires a selected image file.")
-            return self._processor.export_logo_overlay_video(
-                video_info=video_info,
-                selection=self._settings.selection,
-                overlay_image_path=self._settings.overlay_image_path,
-                output_directory=self._output_directory,
-                encoder_plan=self._encoder_plan,
-                output_quality=self._settings.output_quality,
-                output_standardization=self._settings.output_standardization,
-            )
+        zoom_percent: Optional[int] = None
+        if self._settings.zoom_enabled:
+            zoom_percent = self._settings.zoom_percent
 
-        if self._settings.processing_mode == PROCESSING_MODE_ZOOM:
-            return self._processor.export_zoom_crop_video(
-                video_info=video_info,
-                output_directory=self._output_directory,
-                zoom_percent=self._settings.zoom_percent,
-                encoder_plan=self._encoder_plan,
-                output_quality=self._settings.output_quality,
-                output_standardization=self._settings.output_standardization,
-            )
-
-        raise ValueError(f"Unsupported processing mode: {self._settings.processing_mode}")
+        return self._processor.export_recipe_video(
+            video_info=video_info,
+            output_directory=self._output_directory,
+            encoder_plan=self._encoder_plan,
+            area_cleanup_type=area_cleanup_type,
+            selection=self._settings.selection,
+            blur_strength=self._settings.blur_strength,
+            overlay_image_path=self._settings.overlay_image_path,
+            zoom_percent=zoom_percent,
+            output_quality=self._settings.output_quality,
+            output_standardization=self._settings.output_standardization,
+        )
 
     def _log_result(self, video_info: VideoInfo, result: ExportResult) -> None:
         """Write a compact per-file log entry for debugging."""
@@ -271,3 +292,13 @@ class ExportWorker(QObject):
             f"{standardization.target_width}x{standardization.target_height}"
             f" ({standardization.resize_mode})"
         )
+
+    def describe_recipe(self) -> str:
+        """Return a compact recipe summary for logging."""
+        summary = build_recipe_summary(
+            recipe=self._settings.to_recipe(),
+            encoder_summary="",
+        )
+        if summary.startswith("Will apply: "):
+            return summary.removeprefix("Will apply: ")
+        return summary

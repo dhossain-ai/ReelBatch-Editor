@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from core.export_recipe import legacy_processing_mode_to_recipe_state
 from core.processing_modes import (
     PROCESSING_MODE_BLUR,
     PROCESSING_MODE_LOGO,
@@ -33,13 +34,12 @@ def derive_processing_mode(
 
 def workflow_state_from_processing_mode(processing_mode: Optional[str]) -> tuple[str, bool]:
     """Map a stored preset/settings mode back into the simplified UI controls."""
-    if processing_mode == PROCESSING_MODE_ZOOM:
-        return AREA_CLEANUP_OPTION_NONE, True
-    if processing_mode == PROCESSING_MODE_LOGO:
-        return PROCESSING_MODE_LOGO, False
-    if processing_mode == PROCESSING_MODE_BLUR:
-        return PROCESSING_MODE_BLUR, False
-    return AREA_CLEANUP_OPTION_NONE, False
+    area_cleanup_enabled, cleanup_type, zoom_enabled = (
+        legacy_processing_mode_to_recipe_state(processing_mode)
+    )
+    if not area_cleanup_enabled:
+        return AREA_CLEANUP_OPTION_NONE, zoom_enabled
+    return cleanup_type, zoom_enabled
 
 
 def build_workflow_hint(
@@ -48,18 +48,24 @@ def build_workflow_hint(
     processing_mode: Optional[str],
     has_output_directory: bool,
     is_exporting: bool = False,
+    recipe_enabled: Optional[bool] = None,
+    area_cleanup_enabled: Optional[bool] = None,
 ) -> str:
     """Return a compact guided-workflow hint for the right panel."""
     base_hint = "1. Add videos -> 2. Draw area -> 3. Choose options -> 4. Export"
+    if recipe_enabled is None:
+        recipe_enabled = processing_mode is not None
+    if area_cleanup_enabled is None:
+        area_cleanup_enabled = processing_mode in {PROCESSING_MODE_BLUR, PROCESSING_MODE_LOGO}
 
     if is_exporting:
         return f"{base_hint}\nExport in progress..."
     if video_count <= 0:
         return f"{base_hint}\nNext: add one or more videos."
-    if processing_mode in {PROCESSING_MODE_BLUR, PROCESSING_MODE_LOGO} and not has_selection:
+    if area_cleanup_enabled and not has_selection:
         return f"{base_hint}\nNext: draw the logo/watermark area on the preview."
-    if processing_mode is None:
-        return f"{base_hint}\nNext: choose an Area Cleanup option or enable zoom/crop."
+    if not recipe_enabled:
+        return f"{base_hint}\nNext: enable area cleanup, zoom/crop, or output size."
     if not has_output_directory:
         return f"{base_hint}\nNext: choose an output folder."
     return f"{base_hint}\nReady to export."

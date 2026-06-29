@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import Optional
 
 from core.app_paths import get_settings_file_path
+from core.export_recipe import (
+    AREA_CLEANUP_TYPE_BLUR,
+    infer_output_standardization_enabled,
+    legacy_processing_mode_to_recipe_state,
+)
 from core.output_resolution import DEFAULT_OUTPUT_RESOLUTION, DEFAULT_RESIZE_MODE
 
 
@@ -19,9 +24,13 @@ class AppSettings:
     last_output_folder: Optional[str] = None
     last_encoder_selection: str = ""
     last_processing_mode: str = ""
+    area_cleanup_enabled: bool = False
+    cleanup_type: str = AREA_CLEANUP_TYPE_BLUR
+    zoom_enabled: bool = False
     last_zoom_percentage: int = 110
     last_blur_strength: int = 10
     last_output_quality: str = "Balanced"
+    output_standardization_enabled: bool = False
     last_output_resolution: str = DEFAULT_OUTPUT_RESOLUTION
     last_resize_mode: str = DEFAULT_RESIZE_MODE
     last_custom_output_width: int = 1080
@@ -33,9 +42,13 @@ class AppSettings:
             "last_output_folder": self.last_output_folder,
             "last_encoder_selection": self.last_encoder_selection,
             "last_processing_mode": self.last_processing_mode,
+            "area_cleanup_enabled": bool(self.area_cleanup_enabled),
+            "cleanup_type": self.cleanup_type,
+            "zoom_enabled": bool(self.zoom_enabled),
             "last_zoom_percentage": int(self.last_zoom_percentage),
             "last_blur_strength": int(self.last_blur_strength),
             "last_output_quality": self.last_output_quality,
+            "output_standardization_enabled": bool(self.output_standardization_enabled),
             "last_output_resolution": self.last_output_resolution,
             "last_resize_mode": self.last_resize_mode,
             "last_custom_output_width": int(self.last_custom_output_width),
@@ -45,6 +58,13 @@ class AppSettings:
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "AppSettings":
         """Build settings from decoded JSON."""
+        last_processing_mode = str(payload.get("last_processing_mode", ""))
+        legacy_area_cleanup_enabled, legacy_cleanup_type, legacy_zoom_enabled = (
+            legacy_processing_mode_to_recipe_state(last_processing_mode)
+        )
+        last_output_resolution = str(
+            payload.get("last_output_resolution", DEFAULT_OUTPUT_RESOLUTION)
+        )
         return cls(
             last_output_folder=(
                 str(payload["last_output_folder"])
@@ -52,13 +72,20 @@ class AppSettings:
                 else None
             ),
             last_encoder_selection=str(payload.get("last_encoder_selection", "")),
-            last_processing_mode=str(payload.get("last_processing_mode", "")),
+            last_processing_mode=last_processing_mode,
+            area_cleanup_enabled=bool(
+                payload.get("area_cleanup_enabled", legacy_area_cleanup_enabled)
+            ),
+            cleanup_type=str(payload.get("cleanup_type", legacy_cleanup_type)),
+            zoom_enabled=bool(payload.get("zoom_enabled", legacy_zoom_enabled)),
             last_zoom_percentage=int(payload.get("last_zoom_percentage", 110)),
             last_blur_strength=int(payload.get("last_blur_strength", 10)),
             last_output_quality=str(payload.get("last_output_quality", "Balanced")),
-            last_output_resolution=str(
-                payload.get("last_output_resolution", DEFAULT_OUTPUT_RESOLUTION)
+            output_standardization_enabled=infer_output_standardization_enabled(
+                last_output_resolution,
+                payload,
             ),
+            last_output_resolution=last_output_resolution,
             last_resize_mode=str(payload.get("last_resize_mode", DEFAULT_RESIZE_MODE)),
             last_custom_output_width=int(payload.get("last_custom_output_width", 1080)),
             last_custom_output_height=int(payload.get("last_custom_output_height", 1920)),

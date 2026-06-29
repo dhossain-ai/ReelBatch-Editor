@@ -9,6 +9,7 @@ from shutil import which
 from subprocess import CompletedProcess, run
 from typing import Callable, Optional, Sequence
 
+from core.export_recipe import AREA_CLEANUP_TYPE_BLUR, AREA_CLEANUP_TYPE_LOGO
 from core.output_resolution import (
     OutputStandardization,
     RESIZE_MODE_FILL_AND_CROP,
@@ -46,6 +47,8 @@ SUPPORTED_ENCODERS = {
 OUTPUT_SUFFIX_BLURRED = "_blurred"
 OUTPUT_SUFFIX_BRANDED = "_branded"
 OUTPUT_SUFFIX_ZOOMED = "_zoomed"
+OUTPUT_SUFFIX_STANDARDIZED = "_standardized"
+OUTPUT_SUFFIX_PROCESSED = "_processed"
 
 DEFAULT_OUTPUT_SUFFIX = OUTPUT_SUFFIX_BLURRED
 FFMPEG_NOT_FOUND_MESSAGE = (
@@ -247,30 +250,18 @@ class FFmpegProcessor:
         output_standardization: Optional[OutputStandardization] = None,
     ) -> list[str]:
         """Build an FFmpeg command that blurs the selected region and writes MP4 output."""
-        input_file = Path(input_path)
-        output_file = Path(output_path)
-        pixel_rect = normalized_selection_to_pixel_rect(selection, video_width, video_height)
-        filter_graph = build_blur_filter(pixel_rect, blur_strength)
-        filter_graph = append_output_standardization_filter(filter_graph, output_standardization)
-
-        command = [
-            self.ffmpeg_path,
-            "-y",
-            "-i",
-            str(input_file),
-            "-filter_complex",
-            filter_graph,
-            "-map",
-            "[outv]",
-            "-map",
-            "0:a?",
-            "-c:v",
-            encoder,
-            "-pix_fmt",
-            "yuv420p",
-        ]
-        command.extend(self._build_output_arguments(encoder, output_file, output_quality))
-        return command
+        return self.build_recipe_command(
+            input_path=input_path,
+            output_path=output_path,
+            video_width=video_width,
+            video_height=video_height,
+            encoder=encoder,
+            area_cleanup_type=AREA_CLEANUP_TYPE_BLUR,
+            selection=selection,
+            blur_strength=blur_strength,
+            output_quality=output_quality,
+            output_standardization=output_standardization,
+        )
 
     def build_logo_overlay_command(
         self,
@@ -285,33 +276,18 @@ class FFmpegProcessor:
         output_standardization: Optional[OutputStandardization] = None,
     ) -> list[str]:
         """Build an FFmpeg command that overlays a scaled logo/image on the selected region."""
-        input_file = Path(input_path)
-        output_file = Path(output_path)
-        overlay_file = Path(overlay_image_path)
-        pixel_rect = normalized_selection_to_pixel_rect(selection, video_width, video_height)
-        filter_graph = build_logo_overlay_filter(pixel_rect)
-        filter_graph = append_output_standardization_filter(filter_graph, output_standardization)
-
-        command = [
-            self.ffmpeg_path,
-            "-y",
-            "-i",
-            str(input_file),
-            "-i",
-            str(overlay_file),
-            "-filter_complex",
-            filter_graph,
-            "-map",
-            "[outv]",
-            "-map",
-            "0:a?",
-            "-c:v",
-            encoder,
-            "-pix_fmt",
-            "yuv420p",
-        ]
-        command.extend(self._build_output_arguments(encoder, output_file, output_quality))
-        return command
+        return self.build_recipe_command(
+            input_path=input_path,
+            output_path=output_path,
+            video_width=video_width,
+            video_height=video_height,
+            encoder=encoder,
+            area_cleanup_type=AREA_CLEANUP_TYPE_LOGO,
+            selection=selection,
+            overlay_image_path=overlay_image_path,
+            output_quality=output_quality,
+            output_standardization=output_standardization,
+        )
 
     def build_zoom_crop_command(
         self,
@@ -325,27 +301,70 @@ class FFmpegProcessor:
         output_standardization: Optional[OutputStandardization] = None,
     ) -> list[str]:
         """Build an FFmpeg command that scales and center-crops back to the original size."""
+        return self.build_recipe_command(
+            input_path=input_path,
+            output_path=output_path,
+            video_width=video_width,
+            video_height=video_height,
+            encoder=encoder,
+            zoom_percent=zoom_percent,
+            output_quality=output_quality,
+            output_standardization=output_standardization,
+        )
+
+    def build_recipe_command(
+        self,
+        input_path: Path | str,
+        output_path: Path | str,
+        video_width: int,
+        video_height: int,
+        encoder: str,
+        area_cleanup_type: Optional[str] = None,
+        selection: Optional[NormalizedSelection] = None,
+        blur_strength: int = 10,
+        overlay_image_path: Optional[Path | str] = None,
+        zoom_percent: Optional[int] = None,
+        output_quality: str = OUTPUT_QUALITY_BALANCED,
+        output_standardization: Optional[OutputStandardization] = None,
+    ) -> list[str]:
+        """Build an FFmpeg command for the full export recipe pipeline."""
         input_file = Path(input_path)
         output_file = Path(output_path)
-        filter_graph = build_zoom_crop_filter(video_width, video_height, zoom_percent)
-        filter_graph = append_output_standardization_filter(filter_graph, output_standardization)
+        overlay_file = Path(overlay_image_path) if overlay_image_path is not None else None
+        if area_cleanup_type == AREA_CLEANUP_TYPE_LOGO and overlay_file is None:
+            raise ValueError("Logo overlay exports require an overlay image path.")
+        filter_graph = build_recipe_filter(
+            video_width=video_width,
+            video_height=video_height,
+            area_cleanup_type=area_cleanup_type,
+            selection=selection,
+            blur_strength=blur_strength,
+            zoom_percent=zoom_percent,
+            output_standardization=output_standardization,
+        )
 
         command = [
             self.ffmpeg_path,
             "-y",
             "-i",
             str(input_file),
-            "-filter_complex",
-            filter_graph,
-            "-map",
-            "[outv]",
-            "-map",
-            "0:a?",
-            "-c:v",
-            encoder,
-            "-pix_fmt",
-            "yuv420p",
         ]
+        if overlay_file is not None:
+            command.extend(["-i", str(overlay_file)])
+        command.extend(
+            [
+                "-filter_complex",
+                filter_graph,
+                "-map",
+                "[outv]",
+                "-map",
+                "0:a?",
+                "-c:v",
+                encoder,
+                "-pix_fmt",
+                "yuv420p",
+            ]
+        )
         command.extend(self._build_output_arguments(encoder, output_file, output_quality))
         return command
 
@@ -360,26 +379,15 @@ class FFmpegProcessor:
         output_standardization: Optional[OutputStandardization] = None,
     ) -> ExportResult:
         """Export one blurred video, retrying with CPU when Auto NVENC fails."""
-        output_path = build_output_path(
-            output_directory,
-            video_info.file_name,
-            suffix=build_mode_output_suffix(OUTPUT_SUFFIX_BLURRED, output_standardization),
-        )
-        return self._export_video_with_retry(
+        return self.export_recipe_video(
             video_info=video_info,
-            output_path=output_path,
+            output_directory=output_directory,
             encoder_plan=encoder_plan,
-            command_builder=lambda encoder: self.build_blur_command(
-                input_path=video_info.file_path,
-                output_path=output_path,
-                selection=selection,
-                video_width=video_info.width,
-                video_height=video_info.height,
-                blur_strength=blur_strength,
-                encoder=encoder,
-                output_quality=output_quality,
-                output_standardization=output_standardization,
-            )
+            area_cleanup_type=AREA_CLEANUP_TYPE_BLUR,
+            selection=selection,
+            blur_strength=blur_strength,
+            output_quality=output_quality,
+            output_standardization=output_standardization,
         )
 
     def export_logo_overlay_video(
@@ -393,26 +401,15 @@ class FFmpegProcessor:
         output_standardization: Optional[OutputStandardization] = None,
     ) -> ExportResult:
         """Export one video with a scaled logo/image overlay."""
-        output_path = build_output_path(
-            output_directory,
-            video_info.file_name,
-            suffix=build_mode_output_suffix(OUTPUT_SUFFIX_BRANDED, output_standardization),
-        )
-        return self._export_video_with_retry(
+        return self.export_recipe_video(
             video_info=video_info,
-            output_path=output_path,
+            output_directory=output_directory,
             encoder_plan=encoder_plan,
-            command_builder=lambda encoder: self.build_logo_overlay_command(
-                input_path=video_info.file_path,
-                output_path=output_path,
-                overlay_image_path=overlay_image_path,
-                selection=selection,
-                video_width=video_info.width,
-                video_height=video_info.height,
-                encoder=encoder,
-                output_quality=output_quality,
-                output_standardization=output_standardization,
-            )
+            area_cleanup_type=AREA_CLEANUP_TYPE_LOGO,
+            selection=selection,
+            overlay_image_path=overlay_image_path,
+            output_quality=output_quality,
+            output_standardization=output_standardization,
         )
 
     def export_zoom_crop_video(
@@ -425,22 +422,53 @@ class FFmpegProcessor:
         output_standardization: Optional[OutputStandardization] = None,
     ) -> ExportResult:
         """Export one video with a centered zoom/crop effect."""
+        return self.export_recipe_video(
+            video_info=video_info,
+            output_directory=output_directory,
+            encoder_plan=encoder_plan,
+            zoom_percent=zoom_percent,
+            output_quality=output_quality,
+            output_standardization=output_standardization,
+        )
+
+    def export_recipe_video(
+        self,
+        video_info: VideoInfo,
+        output_directory: Path | str,
+        encoder_plan: EncoderPlan,
+        area_cleanup_type: Optional[str] = None,
+        selection: Optional[NormalizedSelection] = None,
+        blur_strength: int = 10,
+        overlay_image_path: Optional[Path | str] = None,
+        zoom_percent: Optional[int] = None,
+        output_quality: str = OUTPUT_QUALITY_BALANCED,
+        output_standardization: Optional[OutputStandardization] = None,
+    ) -> ExportResult:
+        """Export one video using the full multi-effect recipe pipeline."""
         output_path = build_output_path(
             output_directory,
             video_info.file_name,
-            suffix=build_mode_output_suffix(OUTPUT_SUFFIX_ZOOMED, output_standardization),
+            suffix=build_recipe_output_suffix(
+                area_cleanup_type=area_cleanup_type,
+                zoom_enabled=zoom_percent is not None,
+                output_standardization=output_standardization,
+            ),
         )
         return self._export_video_with_retry(
             video_info=video_info,
             output_path=output_path,
             encoder_plan=encoder_plan,
-            command_builder=lambda encoder: self.build_zoom_crop_command(
+            command_builder=lambda encoder: self.build_recipe_command(
                 input_path=video_info.file_path,
                 output_path=output_path,
                 video_width=video_info.width,
                 video_height=video_info.height,
-                zoom_percent=zoom_percent,
                 encoder=encoder,
+                area_cleanup_type=area_cleanup_type,
+                selection=selection,
+                blur_strength=blur_strength,
+                overlay_image_path=overlay_image_path,
+                zoom_percent=zoom_percent,
                 output_quality=output_quality,
                 output_standardization=output_standardization,
             ),
@@ -560,26 +588,56 @@ def get_encoder_quality_arguments(encoder: str, output_quality: str) -> list[str
 
 def build_blur_filter(pixel_rect: PixelSelection, blur_strength: int) -> str:
     """Build the FFmpeg filter_complex string for the blur overlay pipeline."""
+    return build_blur_filter_step("[0:v]", "[outv]", pixel_rect, blur_strength)
+
+
+def build_blur_filter_step(
+    input_label: str,
+    output_label: str,
+    pixel_rect: PixelSelection,
+    blur_strength: int,
+) -> str:
+    """Build one blur step within a larger filter graph."""
     radius = max(1, int(blur_strength))
     return (
-        "[0:v]split[base][tmp];"
+        f"{input_label}split[base][tmp];"
         f"[tmp]crop=w={pixel_rect.width}:h={pixel_rect.height}:x={pixel_rect.x}:y={pixel_rect.y},"
         f"boxblur={radius}:1[blurred];"
-        f"[base][blurred]overlay=x={pixel_rect.x}:y={pixel_rect.y}[outv]"
+        f"[base][blurred]overlay=x={pixel_rect.x}:y={pixel_rect.y}{output_label}"
     )
 
 
 def build_logo_overlay_filter(pixel_rect: PixelSelection) -> str:
     """Build the FFmpeg filter_complex string for the logo overlay pipeline."""
+    return build_logo_overlay_filter_step("[0:v]", "[outv]", pixel_rect)
+
+
+def build_logo_overlay_filter_step(
+    input_label: str,
+    output_label: str,
+    pixel_rect: PixelSelection,
+) -> str:
+    """Build one logo-overlay step within a larger filter graph."""
     return (
         f"[1:v]scale=w={pixel_rect.width}:h={pixel_rect.height}:force_original_aspect_ratio=decrease,"
         f"pad={pixel_rect.width}:{pixel_rect.height}:(ow-iw)/2:(oh-ih)/2:color=0x00000000[logo];"
-        f"[0:v][logo]overlay=x={pixel_rect.x}:y={pixel_rect.y}:format=auto[outv]"
+        f"{input_label}[logo]overlay=x={pixel_rect.x}:y={pixel_rect.y}:format=auto{output_label}"
     )
 
 
 def build_zoom_crop_filter(video_width: int, video_height: int, zoom_percent: int) -> str:
     """Build the FFmpeg filter_complex string for the centered zoom/crop pipeline."""
+    return build_zoom_crop_filter_step("[0:v]", "[outv]", video_width, video_height, zoom_percent)
+
+
+def build_zoom_crop_filter_step(
+    input_label: str,
+    output_label: str,
+    video_width: int,
+    video_height: int,
+    zoom_percent: int,
+) -> str:
+    """Build one centered zoom/crop step within a larger filter graph."""
     if video_width <= 0 or video_height <= 0:
         raise ValueError("Video dimensions must be positive integers.")
 
@@ -587,8 +645,8 @@ def build_zoom_crop_filter(video_width: int, video_height: int, zoom_percent: in
     scaled_width = max(video_width, int(round(video_width * zoom_factor)))
     scaled_height = max(video_height, int(round(video_height * zoom_factor)))
     return (
-        f"[0:v]scale={scaled_width}:{scaled_height},"
-        f"crop={video_width}:{video_height}:(iw-{video_width})/2:(ih-{video_height})/2[outv]"
+        f"{input_label}scale={scaled_width}:{scaled_height},"
+        f"crop={video_width}:{video_height}:(iw-{video_width})/2:(ih-{video_height})/2{output_label}"
     )
 
 
@@ -628,6 +686,75 @@ def build_output_standardization_filter(output_standardization: OutputStandardiz
     raise ValueError(f"Unsupported resize mode: {output_standardization.resize_mode}")
 
 
+def build_output_standardization_filter_step(
+    input_label: str,
+    output_label: str,
+    output_standardization: OutputStandardization,
+) -> str:
+    """Build one final output-standardization step within a larger filter graph."""
+    return f"{input_label}{build_output_standardization_filter(output_standardization)}{output_label}"
+
+
+def build_recipe_filter(
+    video_width: int,
+    video_height: int,
+    area_cleanup_type: Optional[str] = None,
+    selection: Optional[NormalizedSelection] = None,
+    blur_strength: int = 10,
+    zoom_percent: Optional[int] = None,
+    output_standardization: Optional[OutputStandardization] = None,
+) -> str:
+    """Build the ordered multi-effect filter graph for one export recipe."""
+    steps: list[str] = []
+    current_label = "[0:v]"
+    has_zoom = zoom_percent is not None
+    has_output_standardization = output_standardization is not None
+
+    if area_cleanup_type is not None:
+        if selection is None:
+            raise ValueError("Area cleanup requires a valid selection.")
+        pixel_rect = normalized_selection_to_pixel_rect(selection, video_width, video_height)
+        if has_zoom:
+            next_label = "[cleanupv]"
+        elif has_output_standardization:
+            next_label = "[preoutv]"
+        else:
+            next_label = "[outv]"
+        if area_cleanup_type == AREA_CLEANUP_TYPE_BLUR:
+            steps.append(build_blur_filter_step(current_label, next_label, pixel_rect, blur_strength))
+        elif area_cleanup_type == AREA_CLEANUP_TYPE_LOGO:
+            steps.append(build_logo_overlay_filter_step(current_label, next_label, pixel_rect))
+        else:
+            raise ValueError(f"Unsupported area cleanup type: {area_cleanup_type}")
+        current_label = next_label
+
+    if has_zoom:
+        next_label = "[preoutv]" if has_output_standardization else "[outv]"
+        steps.append(
+            build_zoom_crop_filter_step(
+                current_label,
+                next_label,
+                video_width,
+                video_height,
+                zoom_percent,
+            )
+        )
+        current_label = next_label
+
+    if output_standardization is not None:
+        steps.append(
+            build_output_standardization_filter_step(
+                current_label,
+                "[outv]",
+                output_standardization,
+            )
+        )
+    elif not steps:
+        steps.append(f"{current_label}null[outv]")
+
+    return ";".join(steps)
+
+
 def build_mode_output_suffix(
     base_suffix: str,
     output_standardization: Optional[OutputStandardization],
@@ -636,6 +763,30 @@ def build_mode_output_suffix(
     if output_standardization is None:
         return base_suffix
     return f"{base_suffix}_{output_standardization.resolution_suffix}"
+
+
+def build_recipe_output_suffix(
+    area_cleanup_type: Optional[str],
+    zoom_enabled: bool,
+    output_standardization: Optional[OutputStandardization],
+) -> str:
+    """Build a readable filename suffix for a multi-effect recipe export."""
+    suffix_parts: list[str] = []
+
+    if area_cleanup_type == AREA_CLEANUP_TYPE_BLUR:
+        suffix_parts.append(OUTPUT_SUFFIX_BLURRED.lstrip("_"))
+    elif area_cleanup_type == AREA_CLEANUP_TYPE_LOGO:
+        suffix_parts.append(OUTPUT_SUFFIX_BRANDED.lstrip("_"))
+
+    if zoom_enabled:
+        suffix_parts.append(OUTPUT_SUFFIX_ZOOMED.lstrip("_"))
+
+    if not suffix_parts and output_standardization is not None:
+        suffix_parts.append(OUTPUT_SUFFIX_STANDARDIZED.lstrip("_"))
+    elif not suffix_parts:
+        suffix_parts.append(OUTPUT_SUFFIX_PROCESSED.lstrip("_"))
+
+    return build_mode_output_suffix(f"_{'_'.join(suffix_parts)}", output_standardization)
 
 
 def build_output_path(

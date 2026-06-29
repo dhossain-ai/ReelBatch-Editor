@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import Optional
 
 from core.app_paths import get_presets_directory, sanitize_filename
+from core.export_recipe import (
+    AREA_CLEANUP_TYPE_BLUR,
+    infer_output_standardization_enabled,
+    legacy_processing_mode_to_recipe_state,
+)
 from core.output_resolution import DEFAULT_OUTPUT_RESOLUTION, DEFAULT_RESIZE_MODE
 from core.selection import NormalizedSelection
 
@@ -18,27 +23,36 @@ class ExportPreset:
     """Serializable preset for the main export workflow."""
 
     name: str
-    processing_mode: str
-    blur_strength: int
-    zoom_percentage: int
-    encoder_preference: str
+    processing_mode: str = ""
+    area_cleanup_enabled: bool = False
+    cleanup_type: str = AREA_CLEANUP_TYPE_BLUR
+    blur_strength: int = 10
+    zoom_enabled: bool = False
+    zoom_percentage: int = 110
+    encoder_preference: str = ""
     output_quality: str = "Balanced"
+    output_standardization_enabled: bool = False
     output_resolution: str = DEFAULT_OUTPUT_RESOLUTION
     resize_mode: str = DEFAULT_RESIZE_MODE
     custom_output_width: int = 1080
     custom_output_height: int = 1920
     selection: Optional[NormalizedSelection] = None
     logo_image_path: Optional[str] = None
+    output_folder: Optional[str] = None
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-friendly representation of this preset."""
         payload: dict[str, object] = {
             "preset_name": self.name,
             "processing_mode": self.processing_mode,
+            "area_cleanup_enabled": bool(self.area_cleanup_enabled),
+            "cleanup_type": self.cleanup_type,
             "blur_strength": int(self.blur_strength),
+            "zoom_enabled": bool(self.zoom_enabled),
             "zoom_percentage": int(self.zoom_percentage),
             "encoder_preference": self.encoder_preference,
             "output_quality": self.output_quality,
+            "output_standardization_enabled": bool(self.output_standardization_enabled),
             "output_resolution": self.output_resolution,
             "resize_mode": self.resize_mode,
             "custom_output_width": int(self.custom_output_width),
@@ -48,19 +62,35 @@ class ExportPreset:
             payload["selection"] = self.selection.to_dict()
         if self.logo_image_path:
             payload["logo_image_path"] = self.logo_image_path
+        if self.output_folder:
+            payload["output_folder"] = self.output_folder
         return payload
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "ExportPreset":
         """Build a preset from JSON data."""
+        processing_mode = str(payload.get("processing_mode", ""))
+        legacy_area_cleanup_enabled, legacy_cleanup_type, legacy_zoom_enabled = (
+            legacy_processing_mode_to_recipe_state(processing_mode)
+        )
+        output_resolution = str(payload.get("output_resolution", DEFAULT_OUTPUT_RESOLUTION))
         return cls(
             name=str(payload["preset_name"]),
-            processing_mode=str(payload["processing_mode"]),
+            processing_mode=processing_mode,
+            area_cleanup_enabled=bool(
+                payload.get("area_cleanup_enabled", legacy_area_cleanup_enabled)
+            ),
+            cleanup_type=str(payload.get("cleanup_type", legacy_cleanup_type)),
             blur_strength=int(payload["blur_strength"]),
+            zoom_enabled=bool(payload.get("zoom_enabled", legacy_zoom_enabled)),
             zoom_percentage=int(payload["zoom_percentage"]),
             encoder_preference=str(payload["encoder_preference"]),
             output_quality=str(payload.get("output_quality", "Balanced")),
-            output_resolution=str(payload.get("output_resolution", DEFAULT_OUTPUT_RESOLUTION)),
+            output_standardization_enabled=infer_output_standardization_enabled(
+                output_resolution,
+                payload,
+            ),
+            output_resolution=output_resolution,
             resize_mode=str(payload.get("resize_mode", DEFAULT_RESIZE_MODE)),
             custom_output_width=int(payload.get("custom_output_width", 1080)),
             custom_output_height=int(payload.get("custom_output_height", 1920)),
@@ -68,6 +98,11 @@ class ExportPreset:
             logo_image_path=(
                 str(payload["logo_image_path"])
                 if payload.get("logo_image_path")
+                else None
+            ),
+            output_folder=(
+                str(payload["output_folder"])
+                if payload.get("output_folder")
                 else None
             ),
         )
