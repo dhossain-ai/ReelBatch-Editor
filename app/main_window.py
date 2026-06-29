@@ -9,8 +9,10 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QLabel, QComboBox, QSlider, QPushButton, 
                                QProgressBar, QFileDialog, QMessageBox, QFrame,
                                QGridLayout, QInputDialog)
+from PySide6.QtGui import QCloseEvent
 from app.preview_canvas import PreviewCanvas
 from app.video_queue import VideoQueue
+from core.app_settings import AppSettings, AppSettingsStore
 from core.export_worker import BatchExportSummary, ExportSettings, ExportWorker
 from core.ffmpeg_processor import (
     ENCODER_OPTION_AUTO,
@@ -42,13 +44,16 @@ class MainWindow(QMainWindow):
         self.output_directory: Optional[Path] = None
         self.logo_image_path: Optional[Path] = None
         self.ffmpeg_processor = FFmpegProcessor()
+        self.app_settings_store = AppSettingsStore()
         self.preset_store = PresetStore()
         self.export_thread: Optional[QThread] = None
         self.export_worker: Optional[ExportWorker] = None
+        self._is_restoring_app_settings = False
         self.setWindowTitle("ReelBatch Editor")
         self.setMinimumSize(1200, 800)
         self.setup_ui()
         self.connect_signals()
+        self.load_app_settings()
         self.update_mode_controls(self.processing_mode.currentText())
     
     def setup_ui(self):
@@ -445,11 +450,15 @@ class MainWindow(QMainWindow):
         
         # Edit settings signals
         self.processing_mode.currentTextChanged.connect(self.on_processing_mode_changed)
+        self.processing_mode.currentTextChanged.connect(self.on_persistent_setting_changed)
         self.logo_button.clicked.connect(self.on_select_logo)
         self.output_button.clicked.connect(self.on_select_output)
         self.save_preset_button.clicked.connect(self.on_save_preset)
         self.load_preset_button.clicked.connect(self.on_load_preset)
         self.clear_selection_button.clicked.connect(self.on_clear_selection)
+        self.blur_slider.valueChanged.connect(self.on_persistent_setting_changed)
+        self.zoom_slider.valueChanged.connect(self.on_persistent_setting_changed)
+        self.encoder_combo.currentTextChanged.connect(self.on_persistent_setting_changed)
         
         # Export signal
         self.export_button.clicked.connect(self.on_export)
@@ -649,6 +658,7 @@ class MainWindow(QMainWindow):
         self.output_directory = Path(selected_directory)
         self.output_folder_label.setText(str(self.output_directory))
         self.status_label.setText("Output folder selected")
+        self.save_app_settings()
     
     def on_save_preset(self):
         """Save the current settings to the app-data preset store and optionally export JSON."""
@@ -710,6 +720,49 @@ class MainWindow(QMainWindow):
         """Update UI affordances and status text when the mode changes."""
         self.update_mode_controls(mode)
         self.status_label.setText(processing_mode_status_text(mode))
+
+    def build_app_settings(self) -> AppSettings:
+        """Capture the currently persistent UI state."""
+        return AppSettings(
+            last_output_folder=str(self.output_directory) if self.output_directory else None,
+            last_encoder_selection=self.encoder_combo.currentText(),
+            last_processing_mode=self.processing_mode.currentText(),
+            last_zoom_percentage=self.zoom_slider.value(),
+            last_blur_strength=self.blur_slider.value(),
+        )
+
+    def load_app_settings(self) -> None:
+        """Restore the last-saved persistent UI state."""
+        try:
+            settings = self.app_settings_store.load()
+        except Exception as exc:
+            self.status_label.setText(f"Settings load skipped: {exc}")
+            return
+
+        self._is_restoring_app_settings = True
+        try:
+            if settings.last_processing_mode:
+                self.processing_mode.setCurrentText(settings.last_processing_mode)
+            if settings.last_encoder_selection:
+                self.encoder_combo.setCurrentText(settings.last_encoder_selection)
+            self.zoom_slider.setValue(settings.last_zoom_percentage)
+            self.blur_slider.setValue(settings.last_blur_strength)
+            if settings.last_output_folder:
+                self.output_directory = Path(settings.last_output_folder)
+                self.output_folder_label.setText(str(self.output_directory))
+        finally:
+            self._is_restoring_app_settings = False
+
+    def save_app_settings(self) -> None:
+        """Persist the current settings to the writable app-data location."""
+        if self._is_restoring_app_settings:
+            return
+
+        self.app_settings_store.save(self.build_app_settings())
+
+    def on_persistent_setting_changed(self, *_args) -> None:
+        """Persist app settings when tracked controls change."""
+        self.save_app_settings()
 
     def update_mode_controls(self, mode: str) -> None:
         """Enable only the controls relevant to the currently selected mode."""
@@ -854,3 +907,8 @@ class MainWindow(QMainWindow):
         """Clear worker references after the background thread stops."""
         self.export_thread = None
         self.export_worker = None
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """Persist settings when the window closes."""
+        self.save_app_settings()
+        super().closeEvent(event)
