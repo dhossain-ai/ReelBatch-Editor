@@ -87,6 +87,11 @@ reelbatch-editor/
 #### Processor
 - Generates FFmpeg commands based on selected mode
 - Handles coordinate conversion (normalized → pixels)
+- Resolves the FFmpeg executable once per session/export using this search order:
+  - `shutil.which("ffmpeg")`
+  - `C:\ffmpeg\bin\ffmpeg.exe`
+  - `ffmpeg\bin\ffmpeg.exe` relative to the app/repo root
+  - `ffmpeg.exe` relative to the app/repo root
 - Supports three processing modes:
   - Blur: Uses FFmpeg `boxblur` or `gblur` filter
   - Logo overlay: Scales the selected image to fit the target rectangle, pads transparently when needed, then uses FFmpeg `overlay`
@@ -135,10 +140,10 @@ reelbatch-editor/
 ### Utilities
 
 #### FFmpeg
-- Detects FFmpeg installation
+- Detects FFmpeg installation from PATH, a common Windows install path, or future bundled executable locations
 - Validates FFmpeg version
 - Checks for NVENC support
-- Provides FFmpeg path abstraction
+- Provides a cached resolved FFmpeg path abstraction that is reused for encoder probing and export subprocesses
 
 #### Coordinates
 - Converts between pixel and normalized coordinates
@@ -169,19 +174,20 @@ reelbatch-editor/
 ### Export Flow
 1. User selects processing mode and settings
 2. MainWindow validates queue, output folder, FFmpeg availability, and any mode-specific requirements
-3. Blur and logo/image modes require a normalized rectangle selection
-4. Logo/image mode also requires a supported overlay file (`.png`, `.jpg`, `.jpeg`, `.webp`)
-5. Zoom/crop mode uses the zoom percentage slider and does not require a selection
-6. MainWindow resolves the encoder plan (Auto/CPU/NVIDIA)
-7. User clicks Export button
-8. MainWindow creates a background Worker for the batch
-9. Worker generates the per-video FFmpeg command for the selected mode via Processor
-10. Worker executes FFmpeg in subprocess
-11. If Auto mode fails on NVENC, Worker retries that file with `libx264`
-12. Worker writes compact log events for export start/end, per-file results, fallback usage, and failure snippets
-13. UI updates progress bar and status text
-14. On completion, Worker signals success/failure summary back to MainWindow
-15. MainWindow shows a compact completion dialog with totals, fallback count, output folder, and log file path
+3. FFmpeg discovery resolves the executable path once and surfaces it in status/log output for debugging
+4. Blur and logo/image modes require a normalized rectangle selection
+5. Logo/image mode also requires a supported overlay file (`.png`, `.jpg`, `.jpeg`, `.webp`)
+6. Zoom/crop mode uses the zoom percentage slider and does not require a selection
+7. MainWindow resolves the encoder plan (Auto/CPU/NVIDIA)
+8. User clicks Export button
+9. MainWindow creates a background Worker for the batch
+10. Worker generates the per-video FFmpeg command for the selected mode via Processor
+11. Worker executes FFmpeg in subprocess using the resolved executable path
+12. If Auto mode fails on NVENC, Worker retries that file with `libx264`
+13. Worker writes compact log events for export start/end, resolved FFmpeg path, per-file results, fallback usage, and failure snippets
+14. UI updates progress bar and status text
+15. On completion, Worker signals success/failure summary back to MainWindow
+16. MainWindow shows a compact completion dialog with totals, fallback count, output folder, and log file path
 
 ## Threading Model
 
@@ -232,7 +238,7 @@ ffmpeg -i input.mp4 -filter_complex "[0:v]scale=scaled_w:scaled_h,crop=orig_w:or
 
 ### NVENC Detection
 ```python
-ffmpeg -encoders
+<resolved_ffmpeg_path> -encoders
 ```
 
 The application scans the encoder list for:
@@ -240,6 +246,10 @@ The application scans the encoder list for:
 - `h264_qsv`
 - `h264_amf`
 - `libx264`
+
+If discovery fails, the UI shows:
+
+`FFmpeg was not found. Install FFmpeg, add it to PATH, or place it at C:\ffmpeg\bin\ffmpeg.exe.`
 
 ### Error Handling
 - Parse FFmpeg stderr for errors

@@ -95,6 +95,7 @@ class ExportWorker(QObject):
         self._log_writer = ExportLogWriter.create(
             Path(log_file_path) if log_file_path is not None else None
         )
+        self._resolved_ffmpeg_path = self._processor.resolved_ffmpeg_path
 
     def run(self) -> None:
         """Export all queued videos and emit a final batch summary."""
@@ -111,6 +112,7 @@ class ExportWorker(QObject):
             f" | output_quality={self._settings.output_quality}"
             f" | output_directory={self._output_directory}"
             f" | total_files={total}"
+            f" | ffmpeg_path={self._resolved_ffmpeg_path or 'unresolved'}"
         )
 
         self.progress_changed.emit(0, total)

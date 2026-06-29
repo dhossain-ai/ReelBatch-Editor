@@ -43,6 +43,10 @@ OUTPUT_SUFFIX_BRANDED = "_branded"
 OUTPUT_SUFFIX_ZOOMED = "_zoomed"
 
 DEFAULT_OUTPUT_SUFFIX = OUTPUT_SUFFIX_BLURRED
+FFMPEG_NOT_FOUND_MESSAGE = (
+    "FFmpeg was not found. Install FFmpeg, add it to PATH, or place it at "
+    r"C:\ffmpeg\bin\ffmpeg.exe."
+)
 
 
 @dataclass(frozen=True)
@@ -93,20 +97,79 @@ class FFmpegProcessor:
     """Build and execute FFmpeg blur exports for a batch of videos."""
 
     def __init__(self, ffmpeg_path: str = "ffmpeg") -> None:
-        self.ffmpeg_path = ffmpeg_path
+        self._configured_ffmpeg_path = ffmpeg_path
+        self._resolved_ffmpeg_path: Optional[str] = None
+
+    @property
+    def ffmpeg_path(self) -> str:
+        """Return the resolved FFmpeg executable when available."""
+        return self.get_ffmpeg_executable() or self._configured_ffmpeg_path
+
+    @property
+    def resolved_ffmpeg_path(self) -> Optional[str]:
+        """Expose the resolved FFmpeg executable path for UI/logging."""
+        return self.get_ffmpeg_executable()
+
+    @staticmethod
+    def get_app_root() -> Path:
+        """Return the repository/application root used for bundled FFmpeg lookups."""
+        return Path(__file__).resolve().parent.parent
+
+    @classmethod
+    def discovery_candidates(cls, ffmpeg_path: str = "ffmpeg") -> tuple[Path | str, ...]:
+        """Return the ordered FFmpeg discovery candidates."""
+        app_root = cls.get_app_root()
+        candidates: list[Path | str] = []
+        if ffmpeg_path and ffmpeg_path != "ffmpeg":
+            candidates.append(Path(ffmpeg_path))
+        candidates.extend(
+            [
+                "ffmpeg",
+                Path(r"C:\ffmpeg\bin\ffmpeg.exe"),
+                app_root / "ffmpeg" / "bin" / "ffmpeg.exe",
+                app_root / "ffmpeg.exe",
+            ]
+        )
+        return tuple(candidates)
+
+    @classmethod
+    def resolve_ffmpeg_path(cls, ffmpeg_path: str = "ffmpeg") -> Optional[str]:
+        """Resolve FFmpeg from PATH or common Windows/bundled locations."""
+        for candidate in cls.discovery_candidates(ffmpeg_path):
+            if candidate == "ffmpeg":
+                resolved = which("ffmpeg")
+                if resolved:
+                    return resolved
+                continue
+
+            candidate_path = Path(candidate)
+            if candidate_path.exists():
+                return str(candidate_path.resolve())
+        return None
+
+    def get_ffmpeg_executable(self) -> Optional[str]:
+        """Return a cached FFmpeg executable path, resolving it when needed."""
+        if self._resolved_ffmpeg_path:
+            return self._resolved_ffmpeg_path
+
+        resolved = self.resolve_ffmpeg_path(self._configured_ffmpeg_path)
+        if resolved:
+            self._resolved_ffmpeg_path = resolved
+        return resolved
 
     def is_ffmpeg_available(self) -> bool:
-        """Return True when FFmpeg is available on PATH."""
-        return which(self.ffmpeg_path) is not None
+        """Return True when FFmpeg is available from any supported discovery path."""
+        return self.get_ffmpeg_executable() is not None
 
     def detect_available_encoders(self) -> EncoderAvailability:
         """Detect a subset of H.264 encoders supported by the local FFmpeg build."""
-        if not self.is_ffmpeg_available():
+        ffmpeg_executable = self.get_ffmpeg_executable()
+        if ffmpeg_executable is None:
             return EncoderAvailability(frozenset())
 
         try:
             result = run(
-                [self.ffmpeg_path, "-encoders"],
+                [ffmpeg_executable, "-encoders"],
                 capture_output=True,
                 text=True,
                 check=False,

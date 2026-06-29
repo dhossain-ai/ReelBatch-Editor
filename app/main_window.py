@@ -23,6 +23,7 @@ from core.ffmpeg_processor import (
     ENCODER_OPTION_AUTO,
     ENCODER_OPTION_CPU,
     ENCODER_OPTION_NVIDIA,
+    FFMPEG_NOT_FOUND_MESSAGE,
     FFmpegProcessor,
     OUTPUT_QUALITY_BALANCED,
     OUTPUT_QUALITY_OPTIONS,
@@ -888,11 +889,7 @@ class MainWindow(QMainWindow):
             return
 
         if not self.ffmpeg_processor.is_ffmpeg_available():
-            message = (
-                "FFmpeg was not found on PATH. Install FFmpeg or add it to PATH, "
-                "then try exporting again."
-            )
-            QMessageBox.warning(self, "FFmpeg Not Found", message)
+            QMessageBox.warning(self, "FFmpeg Not Found", FFMPEG_NOT_FOUND_MESSAGE)
             self.status_label.setText("FFmpeg not available")
             return
 
@@ -938,7 +935,8 @@ class MainWindow(QMainWindow):
         self.progress_bar.setRange(0, len(videos))
         self.progress_bar.setValue(0)
         progress_label = processing_mode_progress_label(mode)
-        self.status_label.setText(f"Starting {progress_label.lower()} export...")
+        ffmpeg_path = self.ffmpeg_processor.resolved_ffmpeg_path or self.ffmpeg_processor.ffmpeg_path
+        self.status_label.setText(f"Starting {progress_label.lower()} export with {ffmpeg_path}...")
 
         self.export_thread = QThread(self)
         self.export_worker = ExportWorker(
@@ -946,6 +944,7 @@ class MainWindow(QMainWindow):
             output_directory=self.output_directory,
             settings=export_settings,
             encoder_plan=encoder_plan,
+            ffmpeg_path=ffmpeg_path,
         )
         self.export_worker.moveToThread(self.export_thread)
         self.export_thread.started.connect(self.export_worker.run)

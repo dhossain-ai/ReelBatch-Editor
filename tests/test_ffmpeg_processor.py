@@ -210,10 +210,85 @@ class FFmpegProcessorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "h264_nvenc"):
             processor.resolve_encoder_plan(ENCODER_OPTION_NVIDIA, availability)
 
-    @patch("core.ffmpeg_processor.run")
+    @patch("core.ffmpeg_processor.Path.exists", autospec=True)
     @patch("core.ffmpeg_processor.which")
-    def test_detect_available_encoders_parses_ffmpeg_output(self, mock_which, mock_run):
-        mock_which.return_value = "C:/ffmpeg/bin/ffmpeg.exe"
+    def test_resolve_ffmpeg_path_prefers_path_lookup_first(self, mock_which, mock_exists):
+        mock_which.return_value = "C:/Program Files/ffmpeg/bin/ffmpeg.exe"
+        mock_exists.return_value = False
+
+        resolved = FFmpegProcessor.resolve_ffmpeg_path()
+
+        self.assertEqual(resolved, "C:/Program Files/ffmpeg/bin/ffmpeg.exe")
+        mock_which.assert_called_once_with("ffmpeg")
+
+    @patch("core.ffmpeg_processor.Path.exists", autospec=True)
+    @patch("core.ffmpeg_processor.which")
+    def test_resolve_ffmpeg_path_uses_common_windows_install(self, mock_which, mock_exists):
+        mock_which.return_value = None
+
+        def exists_side_effect(path_obj: Path) -> bool:
+            return str(path_obj) == r"C:\ffmpeg\bin\ffmpeg.exe"
+
+        mock_exists.side_effect = exists_side_effect
+
+        resolved = FFmpegProcessor.resolve_ffmpeg_path()
+
+        self.assertEqual(resolved, str(Path(r"C:\ffmpeg\bin\ffmpeg.exe").resolve()))
+
+    @patch("core.ffmpeg_processor.Path.exists", autospec=True)
+    @patch("core.ffmpeg_processor.which")
+    @patch.object(FFmpegProcessor, "get_app_root")
+    def test_resolve_ffmpeg_path_uses_bundled_bin_location(
+        self,
+        mock_app_root,
+        mock_which,
+        mock_exists,
+    ):
+        mock_which.return_value = None
+        mock_app_root.return_value = Path("W:/ReelBatch Editor")
+        bundled_path = Path("W:/ReelBatch Editor") / "ffmpeg" / "bin" / "ffmpeg.exe"
+
+        def exists_side_effect(path_obj: Path) -> bool:
+            return Path(path_obj) == bundled_path
+
+        mock_exists.side_effect = exists_side_effect
+
+        resolved = FFmpegProcessor.resolve_ffmpeg_path()
+
+        self.assertEqual(
+            resolved,
+            str(bundled_path.resolve()),
+        )
+
+    @patch("core.ffmpeg_processor.Path.exists", autospec=True)
+    @patch("core.ffmpeg_processor.which")
+    @patch.object(FFmpegProcessor, "get_app_root")
+    def test_resolve_ffmpeg_path_uses_repo_root_ffmpeg_exe_last(
+        self,
+        mock_app_root,
+        mock_which,
+        mock_exists,
+    ):
+        mock_which.return_value = None
+        mock_app_root.return_value = Path("W:/ReelBatch Editor")
+        repo_root_ffmpeg = Path("W:/ReelBatch Editor") / "ffmpeg.exe"
+
+        def exists_side_effect(path_obj: Path) -> bool:
+            return Path(path_obj) == repo_root_ffmpeg
+
+        mock_exists.side_effect = exists_side_effect
+
+        resolved = FFmpegProcessor.resolve_ffmpeg_path()
+
+        self.assertEqual(
+            resolved,
+            str(repo_root_ffmpeg.resolve()),
+        )
+
+    @patch("core.ffmpeg_processor.run")
+    @patch.object(FFmpegProcessor, "resolve_ffmpeg_path")
+    def test_detect_available_encoders_parses_ffmpeg_output(self, mock_resolve, mock_run):
+        mock_resolve.return_value = "C:/ffmpeg/bin/ffmpeg.exe"
         mock_run.return_value.stdout = " V..... h264_nvenc\n V..... libx264\n"
         mock_run.return_value.stderr = ""
         mock_run.return_value.returncode = 0
@@ -221,6 +296,12 @@ class FFmpegProcessorTests(unittest.TestCase):
 
         availability = processor.detect_available_encoders()
 
+        mock_run.assert_called_once_with(
+            ["C:/ffmpeg/bin/ffmpeg.exe", "-encoders"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
         self.assertTrue(availability.has(ENCODER_H264_NVENC))
         self.assertTrue(availability.has(ENCODER_LIBX264))
 

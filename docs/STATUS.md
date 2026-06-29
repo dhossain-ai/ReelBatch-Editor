@@ -4,6 +4,17 @@
 
 Phase 7: Workflow polish complete. Ready for packaging prep and broader smoke testing.
 
+## Hotfixes
+
+### FFmpeg Discovery (2026-06-29)
+
+- [x] Updated FFmpeg discovery to search, in order, `PATH`, `C:\ffmpeg\bin\ffmpeg.exe`, `ffmpeg\bin\ffmpeg.exe` at the app/repo root, and `ffmpeg.exe` at the app/repo root
+- [x] Reused the resolved FFmpeg executable path for availability checks, encoder detection, and export subprocesses
+- [x] Added resolved FFmpeg path visibility to export status/log output for easier Windows troubleshooting
+- [x] Improved the missing-FFmpeg message to point users at PATH setup or `C:\ffmpeg\bin\ffmpeg.exe`
+- [x] Preserved Auto NVENC detection, retry-to-CPU fallback, and CPU-only export behavior
+- [x] Added unit coverage for FFmpeg discovery order and resolved-path encoder probing
+
 ## Phase 2 Completed (UI Skeleton)
 
 - [x] Created PySide6 app skeleton with main.py entry point
@@ -97,7 +108,7 @@ Phase 7: Workflow polish complete. Ready for packaging prep and broader smoke te
 
 ## Current Goal
 
-Prepare for packaging, expand manual export verification, and continue MVP hardening.
+Prepare for packaging, expand manual export verification, and continue MVP hardening with improved FFmpeg discovery for Windows installs and future bundled builds.
 
 ## Next Steps
 
