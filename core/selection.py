@@ -86,6 +86,16 @@ class NormalizedSelection:
         ).clamped()
 
 
+@dataclass(frozen=True)
+class PixelSelection:
+    """Selection stored as integer video pixel coordinates."""
+
+    x: int
+    y: int
+    width: int
+    height: int
+
+
 def fit_rect_within_bounds(
     content_width: float,
     content_height: float,
@@ -176,3 +186,70 @@ def display_rect_from_normalized_selection(
         width=(normalized.width_percent / 100.0) * image_rect.width,
         height=(normalized.height_percent / 100.0) * image_rect.height,
     )
+
+
+def normalized_selection_to_pixel_rect(
+    selection: NormalizedSelection,
+    video_width: int,
+    video_height: int,
+    minimum_size: int = 2,
+    prefer_even_dimensions: bool = True,
+) -> PixelSelection:
+    """Convert a normalized selection to a clamped integer video-space rectangle."""
+    if video_width <= 0 or video_height <= 0:
+        raise ValueError("Video dimensions must be positive integers.")
+
+    normalized = selection.clamped()
+    minimum_size = max(1, int(minimum_size))
+
+    max_x = max(video_width - minimum_size, 0)
+    max_y = max(video_height - minimum_size, 0)
+    x = min(max(int(round((normalized.x_percent / 100.0) * video_width)), 0), max_x)
+    y = min(max(int(round((normalized.y_percent / 100.0) * video_height)), 0), max_y)
+
+    available_width = max(video_width - x, 1)
+    available_height = max(video_height - y, 1)
+    width = _normalize_crop_dimension(
+        value=(normalized.width_percent / 100.0) * video_width,
+        available=available_width,
+        minimum_size=minimum_size,
+        prefer_even_dimensions=prefer_even_dimensions,
+    )
+    height = _normalize_crop_dimension(
+        value=(normalized.height_percent / 100.0) * video_height,
+        available=available_height,
+        minimum_size=minimum_size,
+        prefer_even_dimensions=prefer_even_dimensions,
+    )
+
+    if x + width > video_width:
+        x = max(video_width - width, 0)
+    if y + height > video_height:
+        y = max(video_height - height, 0)
+
+    return PixelSelection(x=x, y=y, width=width, height=height)
+
+
+def _normalize_crop_dimension(
+    value: float,
+    available: int,
+    minimum_size: int,
+    prefer_even_dimensions: bool,
+) -> int:
+    """Clamp a crop width/height to valid video bounds."""
+    available = max(1, int(available))
+    minimum = min(max(1, int(minimum_size)), available)
+    dimension = int(round(value))
+    dimension = max(minimum, min(dimension, available))
+
+    if prefer_even_dimensions and available >= 2 and dimension % 2 != 0:
+        if dimension < available:
+            dimension += 1
+        else:
+            dimension -= 1
+            if dimension < minimum:
+                dimension = available if available % 2 == 0 else available - 1
+
+    if dimension <= 0:
+        return 1
+    return min(dimension, available)
