@@ -65,12 +65,12 @@ Test cases:
 **File:** `tests/test_processor.py`
 
 Test cases:
-- [ ] Generate blur command with correct filter
+- [x] Generate blur command with correct filter
 - [ ] Generate logo overlay command with correct positioning
 - [ ] Generate zoom/crop command with correct scale
-- [ ] Use normalized coordinates in commands
-- [ ] Generate NVENC commands when GPU available
-- [ ] Generate CPU commands as fallback
+- [x] Use normalized coordinates in commands
+- [x] Generate NVENC commands when GPU available
+- [x] Generate CPU commands as fallback
 - [ ] Escape special characters in paths
 - [ ] Handle paths with spaces
 
@@ -130,13 +130,13 @@ Test cases:
 **File:** `tests/test_ffmpeg_integration.py`
 
 Test cases:
-- [ ] Detect FFmpeg installation
+- [x] Detect FFmpeg installation
 - [ ] Detect FFmpeg version
-- [ ] Detect NVENC support
+- [x] Detect NVENC support
 - [ ] Execute simple FFmpeg command
 - [ ] Parse FFmpeg output
 - [ ] Handle FFmpeg errors
-- [ ] Fallback to CPU when NVENC unavailable
+- [x] Fallback to CPU when NVENC unavailable
 
 ## Manual UI Tests
 
@@ -175,17 +175,53 @@ Test cases:
 - [ ] Blur intensity slider works
 - [ ] Logo file picker works
 - [ ] Zoom percentage slider works
-- [ ] Output folder picker works
+- [x] Output folder picker works
 - [ ] Export button is enabled when ready
 
 #### Export
-- [ ] Progress bar appears during export
-- [ ] Progress updates for each video
-- [ ] Status text shows current operation
+- [x] Progress bar appears during export
+- [x] Progress updates for each video
+- [x] Status text shows current operation
 - [ ] Cancel button stops export
-- [ ] Success message appears on completion
-- [ ] Error message appears on failure
+- [x] Success message appears on completion
+- [x] Error message appears on failure
 - [ ] Output folder opens on completion (optional)
+
+### Phase 5 Manual Export Tests
+
+#### Blur Export Happy Path
+1. [ ] Launch the app and import at least 3 videos
+2. [ ] Draw a rectangle selection over a visible logo/watermark area
+3. [ ] Leave processing mode on `Blur selected area`
+4. [ ] Select an output folder
+5. [ ] Leave encoder on `Auto - Prefer NVIDIA NVENC`
+6. [ ] Click `Export All`
+7. [ ] Verify the progress bar reaches the total number of files
+8. [ ] Verify the final summary reports the correct success count
+9. [ ] Open the output folder and confirm files end with `_blurred.mp4`
+10. [ ] Play the outputs and confirm only the selected rectangle is blurred
+
+#### Blur Export Validation
+1. [ ] Try exporting with no videos imported and confirm a readable validation error
+2. [ ] Try exporting without selecting an output folder and confirm a readable validation error
+3. [ ] Try exporting without a selection rectangle and confirm a readable validation error
+4. [ ] Switch the processing mode away from blur and confirm export is blocked for this phase
+
+#### Encoder Behavior
+1. [ ] With FFmpeg unavailable on PATH, confirm the app shows a clear FFmpeg error and does not crash
+2. [ ] With NVENC available, export in `Auto` mode and confirm export succeeds
+3. [ ] With NVENC unavailable, export in `Auto` mode and confirm the app uses `libx264`
+4. [ ] Select `NVIDIA - h264_nvenc` when NVENC is unavailable and confirm a clear error appears
+5. [ ] Force a failure in Auto NVENC mode and confirm the app retries that file with CPU when `libx264` is available
+
+#### Filename Collision Handling
+1. [ ] Export one file twice to the same folder
+2. [ ] Confirm outputs are named like `video_blurred.mp4` and `video_blurred_1.mp4`
+
+#### Partial Failure Handling
+1. [ ] Export a batch where one file is intentionally invalid or unreadable
+2. [ ] Confirm the remaining files still export
+3. [ ] Confirm the final summary includes success and failure counts without dumping huge FFmpeg logs
 
 ### User Experience Tests
 

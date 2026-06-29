@@ -2,7 +2,7 @@
 
 ## Current Stage
 
-Phase 4: Rectangle selection complete. Ready for export pipeline work.
+Phase 5: Blur export workflow complete. Ready for logo overlay and zoom/crop export work.
 
 ## Phase 2 Completed (UI Skeleton)
 
@@ -55,17 +55,31 @@ Phase 4: Rectangle selection complete. Ready for export pipeline work.
 - [x] Preserved normalized selection when switching videos in the queue
 - [x] Added unit tests for preview-to-video coordinate conversion math
 
+## Phase 5 Completed (Blur Export)
+
+- [x] Added FFmpeg availability checks with user-facing error handling
+- [x] Added encoder detection for h264_nvenc, h264_qsv, h264_amf, and libx264
+- [x] Implemented Auto encoder mode with NVIDIA preference and CPU fallback
+- [x] Implemented blur export command generation using filter_complex
+- [x] Converted normalized selection coordinates to clamped video pixel rectangles
+- [x] Preserved audio when present and exported video-only when audio is missing
+- [x] Added unique `_blurred.mp4` output naming with numeric collision suffixes
+- [x] Added background batch export worker so the UI stays responsive
+- [x] Added export validation for queue, output folder, mode, and selection
+- [x] Added per-file failure handling and final export summary reporting
+- [x] Added unit tests for FFmpeg command generation and encoder selection logic
+
 ## Current Goal
 
-Implement FFmpeg processing modes and batch export using the normalized selection data.
+Implement the remaining export modes that reuse the normalized selection data.
 
 ## Next Steps
 
-1. Implement blur export using the normalized selection rectangle
-2. Implement logo/image overlay export using the normalized selection rectangle
-3. Implement zoom/crop export mode
-4. Add background FFmpeg export worker flow
-5. Persist selection and mode settings in presets
+1. Implement logo/image overlay export using the normalized selection rectangle
+2. Implement zoom/crop export mode
+3. Persist selection and mode settings in presets
+4. Improve export reporting and optional cancellation controls
+5. Package the Windows build after export modes are complete
 
 ## MVP Features
 
@@ -78,11 +92,11 @@ Implement FFmpeg processing modes and batch export using the normalized selectio
 * [x] Allow rectangle selection on preview
 * [x] Store rectangle as normalized percentages
 * [x] Add output folder picker
-* [ ] Add blur selected area export mode
+* [x] Add blur selected area export mode
 * [ ] Add logo/image overlay export mode
 * [ ] Add zoom/crop export mode
 * [x] Add batch export progress
-* [ ] Add error handling
+* [x] Add error handling
 * [x] Add preset save/load
 * [ ] Package as Windows EXE
 
@@ -95,6 +109,8 @@ Implement FFmpeg processing modes and batch export using the normalized selectio
 * Packaging: PyInstaller
 * First selection tool: rectangle only
 * Selection storage: normalized percentages with preview-space clamping
+* First export mode: blur selected area only
+* Auto encoder mode: prefer NVENC, retry with libx264 on failure when available
 
 ## Not in MVP
 

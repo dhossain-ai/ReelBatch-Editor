@@ -87,6 +87,7 @@ reelbatch-editor/
   - Logo overlay: Uses FFmpeg `overlay` filter
   - Zoom/crop: Uses FFmpeg `scale` and `crop` filters
 - Generates encoder-specific commands (NVENC vs CPU)
+- Resolves Auto encoder mode by preferring `h264_nvenc` and falling back to `libx264` when needed
 
 #### Worker
 - QThread-based background worker
@@ -95,6 +96,7 @@ reelbatch-editor/
 - Handles process cancellation
 - Reports progress and errors
 - Ensures UI remains responsive during export
+- Continues exporting later files even if one file fails
 
 #### Preview
 - Extracts first frame from video using OpenCV
@@ -152,14 +154,15 @@ reelbatch-editor/
 
 ### Export Flow
 1. User selects processing mode and settings
-2. User clicks Export button
-3. MainWindow creates Worker for each video
-4. Worker generates FFmpeg command via Processor
-5. Worker executes FFmpeg in subprocess
-6. Worker streams progress to UI
-7. UI updates progress bar
-8. On completion, Worker signals success/failure
-9. UI updates VideoItem status
+2. MainWindow validates queue, output folder, selection, and FFmpeg availability
+3. MainWindow resolves the encoder plan (Auto/CPU/NVIDIA)
+4. User clicks Export button
+5. MainWindow creates a background Worker for the batch
+6. Worker generates a blur command for each video via Processor
+7. Worker executes FFmpeg in subprocess
+8. If Auto mode fails on NVENC, Worker retries that file with `libx264`
+9. UI updates progress bar and status text
+10. On completion, Worker signals success/failure summary back to MainWindow
 
 ## Threading Model
 
@@ -192,13 +195,14 @@ reelbatch-editor/
 - Used for FFmpeg commands
 - Calculated at export time
 - Formula: `pixel = (percent / 100) * dimension`
+- Width and height are clamped to valid integers and kept at least 2 pixels, preferring even dimensions where practical
 
 ## FFmpeg Integration
 
 ### Command Generation
 ```python
 # Blur example
-ffmpeg -i input.mp4 -vf "boxblur=luma_radius:min(w:h)/10:chroma_radius:min(cw:ch)/10" output.mp4
+ffmpeg -i input.mp4 -filter_complex "[0:v]split[base][tmp];[tmp]crop=w:h:x:y,boxblur=12:1[blurred];[base][blurred]overlay=x:y[outv]" -map [outv] -map 0:a? output_blurred.mp4
 
 # Logo overlay example
 ffmpeg -i input.mp4 -i logo.png -filter_complex "overlay=x:y" output.mp4
@@ -209,14 +213,21 @@ ffmpeg -i input.mp4 -vf "scale=iw*1.1:ih*1.1,crop=iw:ih:(iw-iw)/2:(ih-ih)/2" out
 
 ### NVENC Detection
 ```python
-ffmpeg -encoders | findstr h264_nvenc
+ffmpeg -encoders
 ```
+
+The application scans the encoder list for:
+- `h264_nvenc`
+- `h264_qsv`
+- `h264_amf`
+- `libx264`
 
 ### Error Handling
 - Parse FFmpeg stderr for errors
 - Map common errors to user-friendly messages
 - Fallback to CPU encoder if NVENC fails
 - Log full FFmpeg output for debugging
+- Keep popup summaries readable by truncating the visible failure list
 
 ## State Management
 

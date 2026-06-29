@@ -19,6 +19,8 @@ ReelBatch Editor automates this process by letting you:
 - **Preview canvas** - See the first frame of videos to identify logo/watermark areas
 - **Rectangle selection** - Draw a rectangular selection over the target area
 - **Normalized coordinates** - Selection stored as percentages, works across different resolutions
+- **Blur export** - Export MP4 files with the selected rectangle blurred via FFmpeg
+- **Encoder selection** - Auto prefers NVIDIA NVENC and falls back to CPU/libx264 when needed
 - **Three processing modes:**
   1. **Blur** - Blur the selected area to hide logos/watermarks
   2. **Logo overlay** - Cover the selected area with your own logo or image
@@ -67,7 +69,7 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed roadmap.
 
 ## Current Status
 
-**Stage:** Phase 4 complete - normalized rectangle selection is now implemented on the preview canvas.
+**Stage:** Phase 5 complete - blur export is now implemented end-to-end.
 
 **Progress:**
 - [x] GitHub repository initialized
@@ -77,10 +79,12 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed roadmap.
 - [x] Rectangle selection overlay with normalized percentage storage
 - [x] Selection values shown in the Edit Settings panel
 - [x] Coordinate conversion tests for scaled and letterboxed previews
-- [ ] FFmpeg processing/export functionality
+- [x] FFmpeg blur export workflow with background processing
+- [x] Output folder selection and collision-safe output naming
+- [x] Auto encoder selection with NVENC-to-libx264 fallback
 - [ ] Windows EXE packaging
 
-The app now supports importing multiple videos, previewing frames, drawing a reusable rectangle selection, and keeping that selection consistent across resize events and video switches.
+The app now supports importing multiple videos, drawing a reusable normalized selection, and exporting blurred MP4 outputs in the background while keeping the UI responsive.
 
 See [docs/STATUS.md](docs/STATUS.md) for detailed task checklist.
 
