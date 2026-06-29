@@ -12,9 +12,13 @@ from core.ffmpeg_processor import (
     ENCODER_OPTION_NVIDIA,
     EncoderAvailability,
     FFmpegProcessor,
+    OUTPUT_QUALITY_BALANCED,
+    OUTPUT_QUALITY_FAST,
+    OUTPUT_QUALITY_HIGH,
     OUTPUT_SUFFIX_BRANDED,
     OUTPUT_SUFFIX_ZOOMED,
     build_output_path,
+    get_encoder_quality_arguments,
 )
 from core.selection import NormalizedSelection, normalized_selection_to_pixel_rect
 
@@ -161,6 +165,34 @@ class FFmpegProcessorTests(unittest.TestCase):
         self.assertIn("0:a?", command)
         self.assertIn(ENCODER_LIBX264, command)
         self.assertEqual(command[-1], "output.mp4")
+
+    def test_quality_mapping_for_libx264_profiles(self):
+        self.assertEqual(
+            get_encoder_quality_arguments(ENCODER_LIBX264, OUTPUT_QUALITY_FAST),
+            ["-preset", "veryfast", "-crf", "25"],
+        )
+        self.assertEqual(
+            get_encoder_quality_arguments(ENCODER_LIBX264, OUTPUT_QUALITY_BALANCED),
+            ["-preset", "medium", "-crf", "23"],
+        )
+        self.assertEqual(
+            get_encoder_quality_arguments(ENCODER_LIBX264, OUTPUT_QUALITY_HIGH),
+            ["-preset", "slow", "-crf", "20"],
+        )
+
+    def test_quality_mapping_for_nvenc_profiles(self):
+        self.assertEqual(
+            get_encoder_quality_arguments(ENCODER_H264_NVENC, OUTPUT_QUALITY_FAST),
+            ["-preset", "p4", "-cq", "28"],
+        )
+        self.assertEqual(
+            get_encoder_quality_arguments(ENCODER_H264_NVENC, OUTPUT_QUALITY_BALANCED),
+            ["-preset", "p5", "-cq", "23"],
+        )
+        self.assertEqual(
+            get_encoder_quality_arguments(ENCODER_H264_NVENC, OUTPUT_QUALITY_HIGH),
+            ["-preset", "p7", "-cq", "19"],
+        )
 
     def test_resolve_encoder_plan_auto_prefers_nvenc_and_falls_back_to_cpu(self):
         processor = FFmpegProcessor()
