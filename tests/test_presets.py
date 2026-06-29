@@ -14,16 +14,21 @@ class PresetStoreTests(unittest.TestCase):
         preset = ExportPreset(
             name="Brand Preset",
             processing_mode="Cover with logo/image",
+            area_cleanup_enabled=True,
+            cleanup_type="Cover with logo/image",
             blur_strength=12,
+            zoom_enabled=True,
             zoom_percentage=108,
             encoder_preference="Auto - Prefer NVIDIA NVENC",
             output_quality="High Quality",
+            output_standardization_enabled=True,
             output_resolution="1080x1920",
             resize_mode="Fill & Crop",
             custom_output_width=1080,
             custom_output_height=1920,
             selection=NormalizedSelection(80.0, 5.0, 12.0, 8.0),
             logo_image_path="C:/assets/logo.png",
+            output_folder="C:/exports",
         )
 
         with TemporaryDirectory() as temp_dir:
@@ -34,15 +39,23 @@ class PresetStoreTests(unittest.TestCase):
         self.assertEqual(saved_path.name, "Brand_Preset.json")
         self.assertEqual(loaded.name, preset.name)
         self.assertEqual(loaded.processing_mode, preset.processing_mode)
+        self.assertEqual(loaded.area_cleanup_enabled, preset.area_cleanup_enabled)
+        self.assertEqual(loaded.cleanup_type, preset.cleanup_type)
         self.assertEqual(loaded.blur_strength, preset.blur_strength)
+        self.assertEqual(loaded.zoom_enabled, preset.zoom_enabled)
         self.assertEqual(loaded.zoom_percentage, preset.zoom_percentage)
         self.assertEqual(loaded.encoder_preference, preset.encoder_preference)
         self.assertEqual(loaded.output_quality, preset.output_quality)
+        self.assertEqual(
+            loaded.output_standardization_enabled,
+            preset.output_standardization_enabled,
+        )
         self.assertEqual(loaded.output_resolution, preset.output_resolution)
         self.assertEqual(loaded.resize_mode, preset.resize_mode)
         self.assertEqual(loaded.custom_output_width, preset.custom_output_width)
         self.assertEqual(loaded.custom_output_height, preset.custom_output_height)
         self.assertEqual(loaded.logo_image_path, preset.logo_image_path)
+        self.assertEqual(loaded.output_folder, preset.output_folder)
         self.assertEqual(loaded.selection, preset.selection)
 
     def test_save_preset_to_explicit_export_path(self):
@@ -84,6 +97,10 @@ class PresetStoreTests(unittest.TestCase):
         self.assertEqual(loaded.resize_mode, "Fill & Crop")
         self.assertEqual(loaded.custom_output_width, 1080)
         self.assertEqual(loaded.custom_output_height, 1920)
+        self.assertTrue(loaded.area_cleanup_enabled)
+        self.assertEqual(loaded.cleanup_type, "Blur selected area")
+        self.assertFalse(loaded.zoom_enabled)
+        self.assertTrue(loaded.output_standardization_enabled)
 
 
 if __name__ == "__main__":

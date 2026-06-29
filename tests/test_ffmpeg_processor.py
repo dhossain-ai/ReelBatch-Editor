@@ -126,6 +126,64 @@ class FFmpegProcessorTests(unittest.TestCase):
             "crop=1080:1920[outv]",
         )
 
+    def test_build_recipe_command_for_blur_plus_output_size(self):
+        processor = FFmpegProcessor(ffmpeg_path="ffmpeg")
+        selection = NormalizedSelection(
+            x_percent=83.333333,
+            y_percent=2.083333,
+            width_percent=12.962963,
+            height_percent=6.25,
+        )
+        output_standardization = build_output_standardization(
+            OUTPUT_RESOLUTION_1080X1920,
+            RESIZE_MODE_FILL_AND_CROP,
+        )
+
+        command = processor.build_recipe_command(
+            input_path=Path("input.mp4"),
+            output_path=Path("output.mp4"),
+            video_width=720,
+            video_height=1280,
+            encoder=ENCODER_LIBX264,
+            area_cleanup_type="Blur selected area",
+            selection=selection,
+            blur_strength=12,
+            output_standardization=output_standardization,
+        )
+
+        filter_index = command.index("-filter_complex") + 1
+        self.assertEqual(
+            command[filter_index],
+            "[0:v]split[base][tmp];"
+            "[tmp]crop=w=94:h=80:x=600:y=27,boxblur=12:1[blurred];"
+            "[base][blurred]overlay=x=600:y=27[preoutv];"
+            "[preoutv]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,"
+            "crop=1080:1920[outv]",
+        )
+
+    def test_build_recipe_command_for_output_size_only(self):
+        processor = FFmpegProcessor(ffmpeg_path="ffmpeg")
+        output_standardization = build_output_standardization(
+            OUTPUT_RESOLUTION_1080X1920,
+            RESIZE_MODE_FILL_AND_CROP,
+        )
+
+        command = processor.build_recipe_command(
+            input_path=Path("input.mp4"),
+            output_path=Path("output.mp4"),
+            video_width=720,
+            video_height=1280,
+            encoder=ENCODER_LIBX264,
+            output_standardization=output_standardization,
+        )
+
+        filter_index = command.index("-filter_complex") + 1
+        self.assertEqual(
+            command[filter_index],
+            "[0:v]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,"
+            "crop=1080:1920[outv]",
+        )
+
     def test_output_filename_collision_adds_numeric_suffix(self):
         with TemporaryDirectory() as temp_dir:
             output_dir = Path(temp_dir)
@@ -196,6 +254,41 @@ class FFmpegProcessorTests(unittest.TestCase):
         self.assertIn("0:a?", command)
         self.assertIn(ENCODER_LIBX264, command)
 
+    def test_build_recipe_command_for_logo_plus_output_size(self):
+        processor = FFmpegProcessor(ffmpeg_path="ffmpeg")
+        selection = NormalizedSelection(
+            x_percent=83.333333,
+            y_percent=2.083333,
+            width_percent=12.962963,
+            height_percent=6.25,
+        )
+        output_standardization = build_output_standardization(
+            OUTPUT_RESOLUTION_1080X1920,
+            RESIZE_MODE_FILL_AND_CROP,
+        )
+
+        command = processor.build_recipe_command(
+            input_path=Path("input.mp4"),
+            output_path=Path("output.mp4"),
+            video_width=1080,
+            video_height=1920,
+            encoder=ENCODER_LIBX264,
+            area_cleanup_type="Cover with logo/image",
+            selection=selection,
+            overlay_image_path=Path("brand logo.png"),
+            output_standardization=output_standardization,
+        )
+
+        filter_index = command.index("-filter_complex") + 1
+        self.assertEqual(
+            command[filter_index],
+            "[1:v]scale=w=140:h=120:force_original_aspect_ratio=decrease,"
+            "pad=140:120:(ow-iw)/2:(oh-ih)/2:color=0x00000000[logo];"
+            "[0:v][logo]overlay=x=900:y=40:format=auto[preoutv];"
+            "[preoutv]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,"
+            "crop=1080:1920[outv]",
+        )
+
     def test_build_zoom_crop_command_contains_center_crop_filter(self):
         processor = FFmpegProcessor(ffmpeg_path="ffmpeg")
 
@@ -238,6 +331,31 @@ class FFmpegProcessorTests(unittest.TestCase):
         self.assertEqual(
             command[filter_index],
             "[0:v]scale=720:1280,crop=720:1280:(iw-720)/2:(ih-1280)/2[preoutv];"
+            "[preoutv]scale=1080:1920:force_original_aspect_ratio=decrease:flags=lanczos,"
+            "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black[outv]",
+        )
+
+    def test_build_recipe_command_for_zoom_plus_output_size(self):
+        processor = FFmpegProcessor(ffmpeg_path="ffmpeg")
+        output_standardization = build_output_standardization(
+            OUTPUT_RESOLUTION_1080X1920,
+            RESIZE_MODE_FIT_WITH_PADDING,
+        )
+
+        command = processor.build_recipe_command(
+            input_path=Path("input.mp4"),
+            output_path=Path("output.mp4"),
+            video_width=720,
+            video_height=1280,
+            zoom_percent=108,
+            encoder=ENCODER_LIBX264,
+            output_standardization=output_standardization,
+        )
+
+        filter_index = command.index("-filter_complex") + 1
+        self.assertEqual(
+            command[filter_index],
+            "[0:v]scale=778:1382,crop=720:1280:(iw-720)/2:(ih-1280)/2[preoutv];"
             "[preoutv]scale=1080:1920:force_original_aspect_ratio=decrease:flags=lanczos,"
             "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black[outv]",
         )
