@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSlider,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -45,6 +46,16 @@ from core.ffmpeg_processor import (
     FFmpegProcessor,
     OUTPUT_QUALITY_BALANCED,
     OUTPUT_QUALITY_OPTIONS,
+)
+from core.output_resolution import (
+    DEFAULT_OUTPUT_RESOLUTION,
+    DEFAULT_RESIZE_MODE,
+    OUTPUT_RESOLUTION_CUSTOM,
+    OUTPUT_RESOLUTION_KEEP_ORIGINAL,
+    OUTPUT_RESOLUTION_OPTIONS,
+    RESIZE_MODE_FILL_AND_CROP,
+    RESIZE_MODE_OPTIONS,
+    build_output_standardization,
 )
 from core.presets import ExportPreset, PresetStore
 from core.processing_modes import (
@@ -104,6 +115,7 @@ class MainWindow(QMainWindow):
         self.connect_signals()
         self.load_app_settings()
         self.update_mode_controls()
+        self.update_output_resolution_controls()
         self.update_workflow_hint()
         self.update_action_states()
 
@@ -329,6 +341,51 @@ class MainWindow(QMainWindow):
         self.output_folder_label = self._create_helper_label("No output folder selected")
         output_layout.addWidget(self.output_folder_label)
 
+        output_layout.addWidget(self._create_field_label("Output Resolution"))
+        self.output_resolution_combo = QComboBox()
+        self.output_resolution_combo.addItems(list(OUTPUT_RESOLUTION_OPTIONS))
+        self.output_resolution_combo.setCurrentText(DEFAULT_OUTPUT_RESOLUTION)
+        self.output_resolution_combo.setStyleSheet(self._combo_style())
+        self._configure_panel_control(self.output_resolution_combo, minimum_width=220)
+        output_layout.addWidget(self.output_resolution_combo)
+
+        self.custom_resolution_controls = QWidget()
+        custom_resolution_layout = QHBoxLayout(self.custom_resolution_controls)
+        custom_resolution_layout.setContentsMargins(0, 0, 0, 0)
+        custom_resolution_layout.setSpacing(8)
+
+        custom_width_label = self._create_field_label("Width")
+        custom_width_label.setMinimumWidth(42)
+        custom_resolution_layout.addWidget(custom_width_label)
+        self.custom_output_width_spin = QSpinBox()
+        self.custom_output_width_spin.setRange(2, 7680)
+        self.custom_output_width_spin.setSingleStep(2)
+        self.custom_output_width_spin.setValue(1080)
+        self._configure_panel_control(self.custom_output_width_spin, minimum_width=90)
+        custom_resolution_layout.addWidget(self.custom_output_width_spin)
+
+        custom_height_label = self._create_field_label("Height")
+        custom_height_label.setMinimumWidth(48)
+        custom_resolution_layout.addWidget(custom_height_label)
+        self.custom_output_height_spin = QSpinBox()
+        self.custom_output_height_spin.setRange(2, 7680)
+        self.custom_output_height_spin.setSingleStep(2)
+        self.custom_output_height_spin.setValue(1920)
+        self._configure_panel_control(self.custom_output_height_spin, minimum_width=90)
+        custom_resolution_layout.addWidget(self.custom_output_height_spin)
+        output_layout.addWidget(self.custom_resolution_controls)
+
+        output_layout.addWidget(self._create_field_label("Resize Mode"))
+        self.resize_mode_combo = QComboBox()
+        self.resize_mode_combo.addItems(list(RESIZE_MODE_OPTIONS))
+        self.resize_mode_combo.setCurrentText(DEFAULT_RESIZE_MODE)
+        self.resize_mode_combo.setStyleSheet(self._combo_style())
+        self._configure_panel_control(self.resize_mode_combo, minimum_width=220)
+        output_layout.addWidget(self.resize_mode_combo)
+
+        self.output_resolution_help_label = self._create_helper_label()
+        output_layout.addWidget(self.output_resolution_help_label)
+
         output_layout.addWidget(self._create_field_label("Output Quality"))
         self.output_quality_combo = QComboBox()
         self.output_quality_combo.addItems(list(OUTPUT_QUALITY_OPTIONS))
@@ -428,6 +485,10 @@ class MainWindow(QMainWindow):
         self.save_preset_button.clicked.connect(self.on_save_preset)
         self.load_preset_button.clicked.connect(self.on_load_preset)
         self.clear_selection_button.clicked.connect(self.on_clear_selection)
+        self.output_resolution_combo.currentTextChanged.connect(self.on_output_resolution_changed)
+        self.resize_mode_combo.currentTextChanged.connect(self.on_resize_mode_changed)
+        self.custom_output_width_spin.valueChanged.connect(self.on_custom_resolution_changed)
+        self.custom_output_height_spin.valueChanged.connect(self.on_custom_resolution_changed)
 
         self.blur_slider.valueChanged.connect(self.update_slider_labels)
         self.zoom_slider.valueChanged.connect(self.update_slider_labels)
@@ -751,6 +812,25 @@ class MainWindow(QMainWindow):
         if checked:
             self.status_label.setText(processing_mode_status_text(PROCESSING_MODE_ZOOM))
 
+    def on_output_resolution_changed(self, _value: str) -> None:
+        """Refresh custom resolution controls and persist the new choice."""
+        self.update_output_resolution_controls()
+        self.on_persistent_setting_changed()
+
+    def on_resize_mode_changed(self, _value: str) -> None:
+        """Refresh helper text and persist the new resize mode."""
+        self.update_output_resolution_controls()
+        self.on_persistent_setting_changed()
+
+    def on_custom_resolution_changed(self, value: int) -> None:
+        """Keep custom dimensions even-numbered and persist them."""
+        spinbox = self.sender()
+        if isinstance(spinbox, QSpinBox) and value % 2 != 0:
+            with QSignalBlocker(spinbox):
+                spinbox.setValue(value + 1)
+        self.update_output_resolution_controls()
+        self.on_persistent_setting_changed()
+
     def update_mode_controls(self) -> None:
         """Show only the most relevant controls for the current workflow choice."""
         current_mode = self.get_current_processing_mode()
@@ -788,6 +868,31 @@ class MainWindow(QMainWindow):
                 "Draw a rectangle now if you plan to blur or cover a logo/watermark area."
             )
 
+    def update_output_resolution_controls(self) -> None:
+        """Show custom resolution inputs only when they are relevant."""
+        selected_resolution = self.output_resolution_combo.currentText()
+        is_custom_resolution = selected_resolution == OUTPUT_RESOLUTION_CUSTOM
+        self.custom_resolution_controls.setVisible(is_custom_resolution)
+        self.custom_output_width_spin.setEnabled(is_custom_resolution)
+        self.custom_output_height_spin.setEnabled(is_custom_resolution)
+
+        selected_resize_mode = self.resize_mode_combo.currentText()
+        if selected_resolution == DEFAULT_OUTPUT_RESOLUTION:
+            resolution_text = "1080x1920 is recommended for standard vertical reels."
+        elif selected_resolution == OUTPUT_RESOLUTION_CUSTOM:
+            resolution_text = "Custom width and height must stay positive even numbers."
+        else:
+            resolution_text = f"Exports will be standardized to {selected_resolution}."
+
+        if selected_resolution == OUTPUT_RESOLUTION_KEEP_ORIGINAL:
+            resize_text = "Keep original skips final resizing and leaves the source dimensions unchanged."
+        elif selected_resize_mode == RESIZE_MODE_FILL_AND_CROP:
+            resize_text = "Fill & Crop scales to fill the frame and center-crops overflow."
+        else:
+            resize_text = "Fit with Padding preserves the full frame and pads any empty space."
+
+        self.output_resolution_help_label.setText(f"{resolution_text} {resize_text}")
+
     def update_slider_labels(self, *_args) -> None:
         """Keep the slider value labels in sync with the current controls."""
         self.blur_value_label.setText(f"{self.blur_slider.value()}")
@@ -815,6 +920,10 @@ class MainWindow(QMainWindow):
             zoom_percentage=self.zoom_slider.value(),
             encoder_preference=self.encoder_combo.currentText(),
             output_quality=self.output_quality_combo.currentText(),
+            output_resolution=self.output_resolution_combo.currentText(),
+            resize_mode=self.resize_mode_combo.currentText(),
+            custom_output_width=self.custom_output_width_spin.value(),
+            custom_output_height=self.custom_output_height_spin.value(),
             selection=self.current_selection,
             logo_image_path=str(self.logo_image_path) if self.logo_image_path else None,
         )
@@ -835,6 +944,10 @@ class MainWindow(QMainWindow):
         self.zoom_slider.setValue(preset.zoom_percentage)
         self.encoder_combo.setCurrentText(preset.encoder_preference)
         self.output_quality_combo.setCurrentText(preset.output_quality)
+        self.output_resolution_combo.setCurrentText(preset.output_resolution)
+        self.resize_mode_combo.setCurrentText(preset.resize_mode)
+        self.custom_output_width_spin.setValue(preset.custom_output_width)
+        self.custom_output_height_spin.setValue(preset.custom_output_height)
 
         if preset.logo_image_path:
             stored_logo_path = Path(preset.logo_image_path)
@@ -857,6 +970,7 @@ class MainWindow(QMainWindow):
         self.preview_canvas.set_normalized_selection(self.current_selection)
         self.update_selection_display(self.current_selection)
         self.update_mode_controls()
+        self.update_output_resolution_controls()
         self.update_workflow_hint()
         return warning_text
 
@@ -955,6 +1069,10 @@ class MainWindow(QMainWindow):
             last_zoom_percentage=self.zoom_slider.value(),
             last_blur_strength=self.blur_slider.value(),
             last_output_quality=self.output_quality_combo.currentText(),
+            last_output_resolution=self.output_resolution_combo.currentText(),
+            last_resize_mode=self.resize_mode_combo.currentText(),
+            last_custom_output_width=self.custom_output_width_spin.value(),
+            last_custom_output_height=self.custom_output_height_spin.value(),
         )
 
     def load_app_settings(self) -> None:
@@ -979,13 +1097,21 @@ class MainWindow(QMainWindow):
                 self.encoder_combo.setCurrentText(settings.last_encoder_selection)
             if settings.last_output_quality:
                 self.output_quality_combo.setCurrentText(settings.last_output_quality)
+            if settings.last_output_resolution:
+                self.output_resolution_combo.setCurrentText(settings.last_output_resolution)
+            if settings.last_resize_mode:
+                self.resize_mode_combo.setCurrentText(settings.last_resize_mode)
             self.zoom_slider.setValue(settings.last_zoom_percentage)
             self.blur_slider.setValue(settings.last_blur_strength)
+            self.custom_output_width_spin.setValue(settings.last_custom_output_width)
+            self.custom_output_height_spin.setValue(settings.last_custom_output_height)
             if settings.last_output_folder:
                 self.output_directory = Path(settings.last_output_folder)
                 self.output_folder_label.setText(str(self.output_directory))
         finally:
             self._is_restoring_app_settings = False
+
+        self.update_output_resolution_controls()
 
     def save_app_settings(self) -> None:
         """Persist the current settings to the writable app-data location."""
@@ -1006,6 +1132,10 @@ class MainWindow(QMainWindow):
         self.zoom_slider.setToolTip("Scales the video up, then center-crops back to the original size.")
         self.encoder_combo.setToolTip("Auto uses NVIDIA NVENC when available and falls back to CPU when needed.")
         self.output_quality_combo.setToolTip("Choose a faster or higher-quality preset without manual bitrate tuning.")
+        self.output_resolution_combo.setToolTip("Standardize exports to a vertical reel resolution like 1080x1920.")
+        self.resize_mode_combo.setToolTip("Fill & Crop is recommended for vertical reels. Fit with Padding preserves the whole frame.")
+        self.custom_output_width_spin.setToolTip("Custom export width. Use positive even numbers only.")
+        self.custom_output_height_spin.setToolTip("Custom export height. Use positive even numbers only.")
         self.output_button.setToolTip("Select the folder where exported MP4 files will be written.")
         self.save_preset_button.setToolTip("Save the current creator workflow as a preset.")
         self.load_preset_button.setToolTip("Load a saved preset from the presets folder or any exported preset JSON.")
@@ -1045,15 +1175,25 @@ class MainWindow(QMainWindow):
             output_directory=self.output_directory,
             selection=self.current_selection,
             overlay_image_path=self.logo_image_path,
+            output_resolution=self.output_resolution_combo.currentText(),
+            custom_output_width=self.custom_output_width_spin.value(),
+            custom_output_height=self.custom_output_height_spin.value(),
         )
 
     def build_export_settings(self, mode: str) -> ExportSettings:
         """Return an export settings snapshot for the active workflow."""
+        output_standardization = build_output_standardization(
+            self.output_resolution_combo.currentText(),
+            self.resize_mode_combo.currentText(),
+            custom_width=self.custom_output_width_spin.value(),
+            custom_height=self.custom_output_height_spin.value(),
+        )
         return ExportSettings(
             processing_mode=mode,
             blur_strength=self.blur_slider.value(),
             zoom_percent=self.zoom_slider.value(),
             output_quality=self.output_quality_combo.currentText(),
+            output_standardization=output_standardization,
             selection=self.current_selection,
             overlay_image_path=self.logo_image_path,
         )

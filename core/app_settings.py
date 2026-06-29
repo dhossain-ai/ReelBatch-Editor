@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from core.app_paths import get_settings_file_path
+from core.output_resolution import DEFAULT_OUTPUT_RESOLUTION, DEFAULT_RESIZE_MODE
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,10 @@ class AppSettings:
     last_zoom_percentage: int = 110
     last_blur_strength: int = 10
     last_output_quality: str = "Balanced"
+    last_output_resolution: str = DEFAULT_OUTPUT_RESOLUTION
+    last_resize_mode: str = DEFAULT_RESIZE_MODE
+    last_custom_output_width: int = 1080
+    last_custom_output_height: int = 1920
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-friendly representation."""
@@ -31,6 +36,10 @@ class AppSettings:
             "last_zoom_percentage": int(self.last_zoom_percentage),
             "last_blur_strength": int(self.last_blur_strength),
             "last_output_quality": self.last_output_quality,
+            "last_output_resolution": self.last_output_resolution,
+            "last_resize_mode": self.last_resize_mode,
+            "last_custom_output_width": int(self.last_custom_output_width),
+            "last_custom_output_height": int(self.last_custom_output_height),
         }
 
     @classmethod
@@ -47,6 +56,12 @@ class AppSettings:
             last_zoom_percentage=int(payload.get("last_zoom_percentage", 110)),
             last_blur_strength=int(payload.get("last_blur_strength", 10)),
             last_output_quality=str(payload.get("last_output_quality", "Balanced")),
+            last_output_resolution=str(
+                payload.get("last_output_resolution", DEFAULT_OUTPUT_RESOLUTION)
+            ),
+            last_resize_mode=str(payload.get("last_resize_mode", DEFAULT_RESIZE_MODE)),
+            last_custom_output_width=int(payload.get("last_custom_output_width", 1080)),
+            last_custom_output_height=int(payload.get("last_custom_output_height", 1920)),
         )
 
 

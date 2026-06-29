@@ -11,6 +11,7 @@ from PySide6.QtCore import QObject, Signal
 
 from core.export_logging import ExportLogWriter, extract_ffmpeg_error_snippet
 from core.ffmpeg_processor import EncoderPlan, ExportResult, FFmpegProcessor
+from core.output_resolution import OutputStandardization
 from core.processing_modes import (
     PROCESSING_MODE_BLUR,
     PROCESSING_MODE_LOGO,
@@ -29,6 +30,7 @@ class ExportSettings:
     blur_strength: int = 10
     zoom_percent: int = 100
     output_quality: str = "Balanced"
+    output_standardization: Optional[OutputStandardization] = None
     selection: Optional[NormalizedSelection] = None
     overlay_image_path: Optional[Path] = None
 
@@ -110,6 +112,7 @@ class ExportWorker(QObject):
             f" | encoder_request={self._encoder_plan.requested_option}"
             f" | primary_encoder={self._encoder_plan.primary_encoder}"
             f" | output_quality={self._settings.output_quality}"
+            f" | output_resolution={self._describe_output_standardization()}"
             f" | output_directory={self._output_directory}"
             f" | total_files={total}"
             f" | ffmpeg_path={self._resolved_ffmpeg_path or 'unresolved'}"
@@ -203,6 +206,7 @@ class ExportWorker(QObject):
                 blur_strength=self._settings.blur_strength,
                 encoder_plan=self._encoder_plan,
                 output_quality=self._settings.output_quality,
+                output_standardization=self._settings.output_standardization,
             )
 
         if self._settings.processing_mode == PROCESSING_MODE_LOGO:
@@ -217,6 +221,7 @@ class ExportWorker(QObject):
                 output_directory=self._output_directory,
                 encoder_plan=self._encoder_plan,
                 output_quality=self._settings.output_quality,
+                output_standardization=self._settings.output_standardization,
             )
 
         if self._settings.processing_mode == PROCESSING_MODE_ZOOM:
@@ -226,6 +231,7 @@ class ExportWorker(QObject):
                 zoom_percent=self._settings.zoom_percent,
                 encoder_plan=self._encoder_plan,
                 output_quality=self._settings.output_quality,
+                output_standardization=self._settings.output_standardization,
             )
 
         raise ValueError(f"Unsupported processing mode: {self._settings.processing_mode}")
@@ -254,3 +260,14 @@ class ExportWorker(QObject):
                 "FFmpeg error snippet follows:\n"
                 f"{extract_ffmpeg_error_snippet(result.log_text)}"
             )
+
+    def _describe_output_standardization(self) -> str:
+        """Return a compact log label for the selected output standardization."""
+        if self._settings.output_standardization is None:
+            return "Keep original"
+
+        standardization = self._settings.output_standardization
+        return (
+            f"{standardization.target_width}x{standardization.target_height}"
+            f" ({standardization.resize_mode})"
+        )

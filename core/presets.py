@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from core.app_paths import get_presets_directory, sanitize_filename
+from core.output_resolution import DEFAULT_OUTPUT_RESOLUTION, DEFAULT_RESIZE_MODE
 from core.selection import NormalizedSelection
 
 
@@ -22,6 +23,10 @@ class ExportPreset:
     zoom_percentage: int
     encoder_preference: str
     output_quality: str = "Balanced"
+    output_resolution: str = DEFAULT_OUTPUT_RESOLUTION
+    resize_mode: str = DEFAULT_RESIZE_MODE
+    custom_output_width: int = 1080
+    custom_output_height: int = 1920
     selection: Optional[NormalizedSelection] = None
     logo_image_path: Optional[str] = None
 
@@ -34,6 +39,10 @@ class ExportPreset:
             "zoom_percentage": int(self.zoom_percentage),
             "encoder_preference": self.encoder_preference,
             "output_quality": self.output_quality,
+            "output_resolution": self.output_resolution,
+            "resize_mode": self.resize_mode,
+            "custom_output_width": int(self.custom_output_width),
+            "custom_output_height": int(self.custom_output_height),
         }
         if self.selection is not None:
             payload["selection"] = self.selection.to_dict()
@@ -51,6 +60,10 @@ class ExportPreset:
             zoom_percentage=int(payload["zoom_percentage"]),
             encoder_preference=str(payload["encoder_preference"]),
             output_quality=str(payload.get("output_quality", "Balanced")),
+            output_resolution=str(payload.get("output_resolution", DEFAULT_OUTPUT_RESOLUTION)),
+            resize_mode=str(payload.get("resize_mode", DEFAULT_RESIZE_MODE)),
+            custom_output_width=int(payload.get("custom_output_width", 1080)),
+            custom_output_height=int(payload.get("custom_output_height", 1920)),
             selection=NormalizedSelection.from_mapping(payload.get("selection")),  # type: ignore[arg-type]
             logo_image_path=(
                 str(payload["logo_image_path"])

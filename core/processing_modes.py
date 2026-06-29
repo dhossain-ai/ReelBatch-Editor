@@ -6,6 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional, Sequence
 
+from core.output_resolution import validate_output_resolution
 from core.selection import NormalizedSelection
 
 PROCESSING_MODE_BLUR = "Blur selected area"
@@ -42,6 +43,9 @@ def validate_export_request(
     output_directory: Optional[Path],
     selection: Optional[NormalizedSelection],
     overlay_image_path: Optional[Path],
+    output_resolution: str = "",
+    custom_output_width: Optional[int] = None,
+    custom_output_height: Optional[int] = None,
 ) -> Optional[str]:
     """Return a user-facing validation error, or None when the request is ready."""
     if not videos:
@@ -63,6 +67,15 @@ def validate_export_request(
             return "The selected logo/image file could not be found."
         if not is_supported_overlay_image(overlay_image_path):
             return "Logo/image files must use .png, .jpg, .jpeg, or .webp."
+
+    if output_resolution:
+        resolution_validation_error = validate_output_resolution(
+            output_resolution,
+            custom_width=custom_output_width,
+            custom_height=custom_output_height,
+        )
+        if resolution_validation_error:
+            return resolution_validation_error
 
     return None
 

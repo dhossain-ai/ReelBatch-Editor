@@ -9,6 +9,11 @@ from shutil import which
 from subprocess import CompletedProcess, run
 from typing import Callable, Optional, Sequence
 
+from core.output_resolution import (
+    OutputStandardization,
+    RESIZE_MODE_FILL_AND_CROP,
+    RESIZE_MODE_FIT_WITH_PADDING,
+)
 from core.selection import NormalizedSelection, PixelSelection, normalized_selection_to_pixel_rect
 from core.video_probe import VideoInfo
 
@@ -239,12 +244,14 @@ class FFmpegProcessor:
         blur_strength: int,
         encoder: str,
         output_quality: str = OUTPUT_QUALITY_BALANCED,
+        output_standardization: Optional[OutputStandardization] = None,
     ) -> list[str]:
         """Build an FFmpeg command that blurs the selected region and writes MP4 output."""
         input_file = Path(input_path)
         output_file = Path(output_path)
         pixel_rect = normalized_selection_to_pixel_rect(selection, video_width, video_height)
         filter_graph = build_blur_filter(pixel_rect, blur_strength)
+        filter_graph = append_output_standardization_filter(filter_graph, output_standardization)
 
         command = [
             self.ffmpeg_path,
@@ -275,6 +282,7 @@ class FFmpegProcessor:
         video_height: int,
         encoder: str,
         output_quality: str = OUTPUT_QUALITY_BALANCED,
+        output_standardization: Optional[OutputStandardization] = None,
     ) -> list[str]:
         """Build an FFmpeg command that overlays a scaled logo/image on the selected region."""
         input_file = Path(input_path)
@@ -282,6 +290,7 @@ class FFmpegProcessor:
         overlay_file = Path(overlay_image_path)
         pixel_rect = normalized_selection_to_pixel_rect(selection, video_width, video_height)
         filter_graph = build_logo_overlay_filter(pixel_rect)
+        filter_graph = append_output_standardization_filter(filter_graph, output_standardization)
 
         command = [
             self.ffmpeg_path,
@@ -313,11 +322,13 @@ class FFmpegProcessor:
         zoom_percent: int,
         encoder: str,
         output_quality: str = OUTPUT_QUALITY_BALANCED,
+        output_standardization: Optional[OutputStandardization] = None,
     ) -> list[str]:
         """Build an FFmpeg command that scales and center-crops back to the original size."""
         input_file = Path(input_path)
         output_file = Path(output_path)
         filter_graph = build_zoom_crop_filter(video_width, video_height, zoom_percent)
+        filter_graph = append_output_standardization_filter(filter_graph, output_standardization)
 
         command = [
             self.ffmpeg_path,
@@ -346,12 +357,13 @@ class FFmpegProcessor:
         blur_strength: int,
         encoder_plan: EncoderPlan,
         output_quality: str = OUTPUT_QUALITY_BALANCED,
+        output_standardization: Optional[OutputStandardization] = None,
     ) -> ExportResult:
         """Export one blurred video, retrying with CPU when Auto NVENC fails."""
         output_path = build_output_path(
             output_directory,
             video_info.file_name,
-            suffix=OUTPUT_SUFFIX_BLURRED,
+            suffix=build_mode_output_suffix(OUTPUT_SUFFIX_BLURRED, output_standardization),
         )
         return self._export_video_with_retry(
             video_info=video_info,
@@ -366,6 +378,7 @@ class FFmpegProcessor:
                 blur_strength=blur_strength,
                 encoder=encoder,
                 output_quality=output_quality,
+                output_standardization=output_standardization,
             )
         )
 
@@ -377,12 +390,13 @@ class FFmpegProcessor:
         output_directory: Path | str,
         encoder_plan: EncoderPlan,
         output_quality: str = OUTPUT_QUALITY_BALANCED,
+        output_standardization: Optional[OutputStandardization] = None,
     ) -> ExportResult:
         """Export one video with a scaled logo/image overlay."""
         output_path = build_output_path(
             output_directory,
             video_info.file_name,
-            suffix=OUTPUT_SUFFIX_BRANDED,
+            suffix=build_mode_output_suffix(OUTPUT_SUFFIX_BRANDED, output_standardization),
         )
         return self._export_video_with_retry(
             video_info=video_info,
@@ -397,6 +411,7 @@ class FFmpegProcessor:
                 video_height=video_info.height,
                 encoder=encoder,
                 output_quality=output_quality,
+                output_standardization=output_standardization,
             )
         )
 
@@ -407,12 +422,13 @@ class FFmpegProcessor:
         zoom_percent: int,
         encoder_plan: EncoderPlan,
         output_quality: str = OUTPUT_QUALITY_BALANCED,
+        output_standardization: Optional[OutputStandardization] = None,
     ) -> ExportResult:
         """Export one video with a centered zoom/crop effect."""
         output_path = build_output_path(
             output_directory,
             video_info.file_name,
-            suffix=OUTPUT_SUFFIX_ZOOMED,
+            suffix=build_mode_output_suffix(OUTPUT_SUFFIX_ZOOMED, output_standardization),
         )
         return self._export_video_with_retry(
             video_info=video_info,
@@ -426,6 +442,7 @@ class FFmpegProcessor:
                 zoom_percent=zoom_percent,
                 encoder=encoder,
                 output_quality=output_quality,
+                output_standardization=output_standardization,
             ),
         )
 
@@ -573,6 +590,52 @@ def build_zoom_crop_filter(video_width: int, video_height: int, zoom_percent: in
         f"[0:v]scale={scaled_width}:{scaled_height},"
         f"crop={video_width}:{video_height}:(iw-{video_width})/2:(ih-{video_height})/2[outv]"
     )
+
+
+def append_output_standardization_filter(
+    filter_graph: str,
+    output_standardization: Optional[OutputStandardization],
+) -> str:
+    """Append the final output standardization step after the main processing mode."""
+    if output_standardization is None:
+        return filter_graph
+    if not filter_graph.endswith("[outv]"):
+        raise ValueError("Filter graph must end with [outv] before standardization is appended.")
+
+    prior_output_label = "[preoutv]"
+    base_graph = f"{filter_graph[:-6]}{prior_output_label}"
+    resize_filter = build_output_standardization_filter(output_standardization)
+    return f"{base_graph};{prior_output_label}{resize_filter}[outv]"
+
+
+def build_output_standardization_filter(output_standardization: OutputStandardization) -> str:
+    """Build the final scale/crop or scale/pad filter for standardized output."""
+    target_width = output_standardization.target_width
+    target_height = output_standardization.target_height
+
+    if output_standardization.resize_mode == RESIZE_MODE_FILL_AND_CROP:
+        return (
+            f"scale={target_width}:{target_height}:force_original_aspect_ratio=increase:flags=lanczos,"
+            f"crop={target_width}:{target_height}"
+        )
+
+    if output_standardization.resize_mode == RESIZE_MODE_FIT_WITH_PADDING:
+        return (
+            f"scale={target_width}:{target_height}:force_original_aspect_ratio=decrease:flags=lanczos,"
+            f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:color=black"
+        )
+
+    raise ValueError(f"Unsupported resize mode: {output_standardization.resize_mode}")
+
+
+def build_mode_output_suffix(
+    base_suffix: str,
+    output_standardization: Optional[OutputStandardization],
+) -> str:
+    """Build a readable output suffix that includes standardized resolution when used."""
+    if output_standardization is None:
+        return base_suffix
+    return f"{base_suffix}_{output_standardization.resolution_suffix}"
 
 
 def build_output_path(
