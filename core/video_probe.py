@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Optional
 import cv2
 import numpy as np
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QImage
+
+from core.workflow import format_playback_time
 
 
 @dataclass
@@ -29,12 +31,7 @@ class VideoInfo:
     @property
     def duration_display(self) -> str:
         """Return duration as formatted string."""
-        if self.duration_seconds < 60:
-            return f"{self.duration_seconds:.1f}s"
-        else:
-            minutes = int(self.duration_seconds // 60)
-            seconds = self.duration_seconds % 60
-            return f"{minutes}m {seconds:.0f}s"
+        return format_playback_time(self.duration_seconds)
 
 
 def read_video_metadata(file_path: str) -> Optional[VideoInfo]:
@@ -131,16 +128,7 @@ def extract_preview_frame(file_path: str, target_time_seconds: float = 1.0) -> O
         
         cap.release()
         
-        # Convert BGR to RGB (OpenCV uses BGR by default)
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
-        # Convert to QImage
-        height, width, channel = frame_rgb.shape
-        bytes_per_line = 3 * width
-        qimage = QImage(frame_rgb.data, width, height, bytes_per_line, QImage.Format_RGB888)
-        
-        # Make a copy to ensure the data persists
-        return qimage.copy()
+        return frame_to_qimage(frame)
         
     except Exception as e:
         print(f"Error extracting preview frame from {file_path}: {e}")
@@ -158,3 +146,15 @@ def extract_first_frame(file_path: str) -> Optional[QImage]:
         QImage in RGB format if successful, None if extraction fails
     """
     return extract_preview_frame(file_path, target_time_seconds=0.0)
+
+
+def frame_to_qimage(frame: np.ndarray) -> Optional[QImage]:
+    """Convert an OpenCV BGR frame into a Qt-compatible RGB image."""
+    if frame is None or frame.size == 0:
+        return None
+
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    height, width, _channel = frame_rgb.shape
+    bytes_per_line = 3 * width
+    qimage = QImage(frame_rgb.data, width, height, bytes_per_line, QImage.Format_RGB888)
+    return qimage.copy()

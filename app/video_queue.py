@@ -2,10 +2,22 @@
 Video Queue Widget
 """
 from __future__ import annotations
-from typing import Optional, List, Tuple
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QListWidget, QListWidgetItem
+
+from typing import List, Optional, Tuple
+
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget
+
 from core.video_probe import VideoInfo
+
+
+def format_queue_item_label(video_info: VideoInfo, status: Optional[str] = None) -> str:
+    """Return a compact multi-line queue label with metadata and optional status."""
+    metadata_parts = [video_info.resolution, video_info.duration_display]
+    if status:
+        metadata_parts.append(status)
+    metadata_line = " | ".join(metadata_parts)
+    return f"{video_info.file_name}\n{metadata_line}"
 
 
 class VideoQueue(QWidget):
@@ -17,6 +29,7 @@ class VideoQueue(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.videos = []  # List of VideoInfo objects
+        self._status_by_path: dict[str, str] = {}
         self.setup_ui()
         self.setup_connections()
     
@@ -127,9 +140,13 @@ class VideoQueue(QWidget):
             self.videos.append(video_info)
             
             # Create list item with metadata
-            item_text = f"{video_info.file_name} — {video_info.resolution} — {video_info.duration_display}"
+            item_text = format_queue_item_label(
+                video_info,
+                self._status_by_path.get(video_info.file_path),
+            )
             item = QListWidgetItem(item_text)
             item.setData(Qt.UserRole, video_info)  # Store VideoInfo in item
+            item.setToolTip(video_info.file_path)
             self.video_list.addItem(item)
             added_count += 1
         
@@ -138,6 +155,7 @@ class VideoQueue(QWidget):
     def clear_queue(self):
         """Clear all videos from the queue."""
         self.videos.clear()
+        self._status_by_path.clear()
         self.video_list.clear()
         self.video_selected.emit(None)
     
@@ -164,3 +182,22 @@ class VideoQueue(QWidget):
     def get_video_count(self) -> int:
         """Get the number of videos in the queue."""
         return len(self.videos)
+
+    def set_video_status(self, file_path: str, status: Optional[str]) -> None:
+        """Update the visible status for one queued video."""
+        if status:
+            self._status_by_path[file_path] = status
+        else:
+            self._status_by_path.pop(file_path, None)
+
+        for index in range(self.video_list.count()):
+            item = self.video_list.item(index)
+            video_info = item.data(Qt.UserRole)
+            if video_info and video_info.file_path == file_path:
+                item.setText(format_queue_item_label(video_info, status))
+                break
+
+    def set_status_for_videos(self, file_paths: List[str], status: Optional[str]) -> None:
+        """Update the visible status for multiple queued videos."""
+        for file_path in file_paths:
+            self.set_video_status(file_path, status)
