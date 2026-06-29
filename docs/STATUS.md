@@ -2,7 +2,7 @@
 
 ## Current Stage
 
-Phase 5: Blur export workflow complete. Ready for logo overlay and zoom/crop export work.
+Phase 6: All MVP export modes complete. Ready for preset polish and packaging work.
 
 ## Phase 2 Completed (UI Skeleton)
 
@@ -69,17 +69,28 @@ Phase 5: Blur export workflow complete. Ready for logo overlay and zoom/crop exp
 - [x] Added per-file failure handling and final export summary reporting
 - [x] Added unit tests for FFmpeg command generation and encoder selection logic
 
+## Phase 6 Completed (Logo Overlay + Zoom/Crop Export)
+
+- [x] Added logo/image overlay FFmpeg command generation using normalized selections
+- [x] Added logo/image export validation with supported `.png`, `.jpg`, `.jpeg`, and `.webp` files
+- [x] Added zoom/crop FFmpeg command generation using the existing zoom percentage slider
+- [x] Reused the Phase 5 encoder plan logic for blur, logo/image, and zoom/crop exports
+- [x] Preserved Auto NVENC retry-to-CPU behavior across all supported export modes
+- [x] Extended the background export worker to continue after per-file failures in every mode
+- [x] Added mode-specific output suffixes for blurred, branded, and zoomed MP4 exports
+- [x] Updated the UI validation and status messaging for all three processing modes
+- [x] Added unit tests for logo overlay, zoom/crop, validation rules, and filename suffix behavior
+
 ## Current Goal
 
-Implement the remaining export modes that reuse the normalized selection data.
+Polish presets, expand manual verification, and prepare the Windows packaging step.
 
 ## Next Steps
 
-1. Implement logo/image overlay export using the normalized selection rectangle
-2. Implement zoom/crop export mode
-3. Persist selection and mode settings in presets
-4. Improve export reporting and optional cancellation controls
-5. Package the Windows build after export modes are complete
+1. Persist selection and mode settings in presets
+2. Improve export reporting and optional cancellation controls
+3. Package the Windows build after export modes are complete
+4. Expand smoke testing across more sample video resolutions and aspect ratios
 
 ## MVP Features
 
@@ -93,8 +104,8 @@ Implement the remaining export modes that reuse the normalized selection data.
 * [x] Store rectangle as normalized percentages
 * [x] Add output folder picker
 * [x] Add blur selected area export mode
-* [ ] Add logo/image overlay export mode
-* [ ] Add zoom/crop export mode
+* [x] Add logo/image overlay export mode
+* [x] Add zoom/crop export mode
 * [x] Add batch export progress
 * [x] Add error handling
 * [x] Add preset save/load

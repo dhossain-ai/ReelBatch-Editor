@@ -20,6 +20,8 @@ ReelBatch Editor automates this process by letting you:
 - **Rectangle selection** - Draw a rectangular selection over the target area
 - **Normalized coordinates** - Selection stored as percentages, works across different resolutions
 - **Blur export** - Export MP4 files with the selected rectangle blurred via FFmpeg
+- **Logo/image overlay export** - Cover the selected rectangle with a user-selected image
+- **Zoom/crop export** - Scale the video up and center-crop back to the original dimensions
 - **Encoder selection** - Auto prefers NVIDIA NVENC and falls back to CPU/libx264 when needed
 - **Three processing modes:**
   1. **Blur** - Blur the selected area to hide logos/watermarks
@@ -69,7 +71,7 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed roadmap.
 
 ## Current Status
 
-**Stage:** Phase 5 complete - blur export is now implemented end-to-end.
+**Stage:** Phase 6 complete - all MVP export modes are now implemented end-to-end.
 
 **Progress:**
 - [x] GitHub repository initialized
@@ -79,12 +81,12 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed roadmap.
 - [x] Rectangle selection overlay with normalized percentage storage
 - [x] Selection values shown in the Edit Settings panel
 - [x] Coordinate conversion tests for scaled and letterboxed previews
-- [x] FFmpeg blur export workflow with background processing
+- [x] FFmpeg blur, logo/image overlay, and zoom/crop export workflows
 - [x] Output folder selection and collision-safe output naming
 - [x] Auto encoder selection with NVENC-to-libx264 fallback
 - [ ] Windows EXE packaging
 
-The app now supports importing multiple videos, drawing a reusable normalized selection, and exporting blurred MP4 outputs in the background while keeping the UI responsive.
+The app now supports importing multiple videos, drawing a reusable normalized selection, choosing a blur/logo/zoom processing mode, and exporting MP4 outputs in the background while keeping the UI responsive.
 
 See [docs/STATUS.md](docs/STATUS.md) for detailed task checklist.
 

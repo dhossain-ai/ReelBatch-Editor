@@ -66,8 +66,8 @@ Test cases:
 
 Test cases:
 - [x] Generate blur command with correct filter
-- [ ] Generate logo overlay command with correct positioning
-- [ ] Generate zoom/crop command with correct scale
+- [x] Generate logo overlay command with correct positioning
+- [x] Generate zoom/crop command with correct scale
 - [x] Use normalized coordinates in commands
 - [x] Generate NVENC commands when GPU available
 - [x] Generate CPU commands as fallback
@@ -125,6 +125,9 @@ Test cases:
 - [ ] Export progress updates correctly
 - [ ] Export completes successfully
 - [ ] Output video is valid and playable
+- [x] Validate blur requires a selection
+- [x] Validate logo/image requires both a selection and a supported image file
+- [x] Validate zoom/crop does not require a selection
 
 ### FFmpeg Integration Tests
 **File:** `tests/test_ffmpeg_integration.py`
@@ -187,7 +190,7 @@ Test cases:
 - [x] Error message appears on failure
 - [ ] Output folder opens on completion (optional)
 
-### Phase 5 Manual Export Tests
+### Phase 6 Manual Export Tests
 
 #### Blur Export Happy Path
 1. [ ] Launch the app and import at least 3 videos
@@ -201,11 +204,39 @@ Test cases:
 9. [ ] Open the output folder and confirm files end with `_blurred.mp4`
 10. [ ] Play the outputs and confirm only the selected rectangle is blurred
 
+#### Logo/Image Overlay Happy Path
+1. [ ] Launch the app and import at least 3 videos
+2. [ ] Draw a rectangle selection over the target area
+3. [ ] Switch processing mode to `Cover with logo/image`
+4. [ ] Click `Select Logo/Image` and choose a `.png`, `.jpg`, `.jpeg`, or `.webp` file
+5. [ ] Select an output folder
+6. [ ] Leave encoder on `Auto - Prefer NVIDIA NVENC`
+7. [ ] Click `Export All`
+8. [ ] Verify the progress bar reaches the total number of files
+9. [ ] Verify the final summary lists successful files and any failures clearly
+10. [ ] Open the output folder and confirm files end with `_branded.mp4`
+11. [ ] Play the outputs and confirm the overlay is positioned inside the selected area
+12. [ ] Repeat with a transparent PNG and confirm alpha transparency is preserved
+
+#### Zoom/Crop Happy Path
+1. [ ] Launch the app and import at least 3 videos
+2. [ ] Switch processing mode to `Zoom/crop`
+3. [ ] Do not draw a selection
+4. [ ] Set the zoom slider to `108%` or higher
+5. [ ] Select an output folder
+6. [ ] Click `Export All`
+7. [ ] Verify the progress bar reaches the total number of files
+8. [ ] Verify the final summary lists successful files and any failures clearly
+9. [ ] Open the output folder and confirm files end with `_zoomed.mp4`
+10. [ ] Play the outputs and confirm the video is slightly zoomed and center-cropped back to the original dimensions
+
 #### Blur Export Validation
 1. [ ] Try exporting with no videos imported and confirm a readable validation error
 2. [ ] Try exporting without selecting an output folder and confirm a readable validation error
 3. [ ] Try exporting without a selection rectangle and confirm a readable validation error
-4. [ ] Switch the processing mode away from blur and confirm export is blocked for this phase
+4. [ ] Switch to `Cover with logo/image` without selecting a logo/image and confirm a readable validation error
+5. [ ] Switch to `Cover with logo/image` with an unsupported image type and confirm a readable validation error
+6. [ ] Switch to `Zoom/crop` without a selection and confirm export is allowed
 
 #### Encoder Behavior
 1. [ ] With FFmpeg unavailable on PATH, confirm the app shows a clear FFmpeg error and does not crash
@@ -216,7 +247,9 @@ Test cases:
 
 #### Filename Collision Handling
 1. [ ] Export one file twice to the same folder
-2. [ ] Confirm outputs are named like `video_blurred.mp4` and `video_blurred_1.mp4`
+2. [ ] Confirm blur outputs are named like `video_blurred.mp4` and `video_blurred_1.mp4`
+3. [ ] Confirm logo/image outputs are named like `video_branded.mp4` and `video_branded_1.mp4`
+4. [ ] Confirm zoom/crop outputs are named like `video_zoomed.mp4` and `video_zoomed_1.mp4`
 
 #### Partial Failure Handling
 1. [ ] Export a batch where one file is intentionally invalid or unreadable

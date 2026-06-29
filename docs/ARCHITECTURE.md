@@ -74,6 +74,7 @@ reelbatch-editor/
 #### Controls
 - Processing mode selector (blur/logo/zoom)
 - Settings panels for each mode
+- Validates mode-specific requirements (selection, overlay image, zoom-only export)
 - Export button and progress indicator
 - Output folder picker
 
@@ -84,8 +85,8 @@ reelbatch-editor/
 - Handles coordinate conversion (normalized → pixels)
 - Supports three processing modes:
   - Blur: Uses FFmpeg `boxblur` or `gblur` filter
-  - Logo overlay: Uses FFmpeg `overlay` filter
-  - Zoom/crop: Uses FFmpeg `scale` and `crop` filters
+  - Logo overlay: Scales the selected image to fit the target rectangle, pads transparently when needed, then uses FFmpeg `overlay`
+  - Zoom/crop: Scales the full frame up according to the zoom percentage, then center-crops back to the original dimensions
 - Generates encoder-specific commands (NVENC vs CPU)
 - Resolves Auto encoder mode by preferring `h264_nvenc` and falling back to `libx264` when needed
 
@@ -97,6 +98,7 @@ reelbatch-editor/
 - Reports progress and errors
 - Ensures UI remains responsive during export
 - Continues exporting later files even if one file fails
+- Dispatches blur, logo/image, and zoom/crop exports through the same encoder/fallback pipeline
 
 #### Preview
 - Extracts first frame from video using OpenCV
@@ -154,15 +156,18 @@ reelbatch-editor/
 
 ### Export Flow
 1. User selects processing mode and settings
-2. MainWindow validates queue, output folder, selection, and FFmpeg availability
-3. MainWindow resolves the encoder plan (Auto/CPU/NVIDIA)
-4. User clicks Export button
-5. MainWindow creates a background Worker for the batch
-6. Worker generates a blur command for each video via Processor
-7. Worker executes FFmpeg in subprocess
-8. If Auto mode fails on NVENC, Worker retries that file with `libx264`
-9. UI updates progress bar and status text
-10. On completion, Worker signals success/failure summary back to MainWindow
+2. MainWindow validates queue, output folder, FFmpeg availability, and any mode-specific requirements
+3. Blur and logo/image modes require a normalized rectangle selection
+4. Logo/image mode also requires a supported overlay file (`.png`, `.jpg`, `.jpeg`, `.webp`)
+5. Zoom/crop mode uses the zoom percentage slider and does not require a selection
+6. MainWindow resolves the encoder plan (Auto/CPU/NVIDIA)
+7. User clicks Export button
+8. MainWindow creates a background Worker for the batch
+9. Worker generates the per-video FFmpeg command for the selected mode via Processor
+10. Worker executes FFmpeg in subprocess
+11. If Auto mode fails on NVENC, Worker retries that file with `libx264`
+12. UI updates progress bar and status text
+13. On completion, Worker signals success/failure summary back to MainWindow
 
 ## Threading Model
 
@@ -205,10 +210,10 @@ reelbatch-editor/
 ffmpeg -i input.mp4 -filter_complex "[0:v]split[base][tmp];[tmp]crop=w:h:x:y,boxblur=12:1[blurred];[base][blurred]overlay=x:y[outv]" -map [outv] -map 0:a? output_blurred.mp4
 
 # Logo overlay example
-ffmpeg -i input.mp4 -i logo.png -filter_complex "overlay=x:y" output.mp4
+ffmpeg -i input.mp4 -i logo.png -filter_complex "[1:v]scale=w:h:force_original_aspect_ratio=decrease,pad=w:h:(ow-iw)/2:(oh-ih)/2:color=0x00000000[logo];[0:v][logo]overlay=x:y:format=auto[outv]" -map [outv] -map 0:a? output_branded.mp4
 
 # Zoom/crop example
-ffmpeg -i input.mp4 -vf "scale=iw*1.1:ih*1.1,crop=iw:ih:(iw-iw)/2:(ih-ih)/2" output.mp4
+ffmpeg -i input.mp4 -filter_complex "[0:v]scale=scaled_w:scaled_h,crop=orig_w:orig_h:(iw-orig_w)/2:(ih-orig_h)/2[outv]" -map [outv] -map 0:a? output_zoomed.mp4
 ```
 
 ### NVENC Detection
