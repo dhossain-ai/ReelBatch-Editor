@@ -63,6 +63,7 @@ reelbatch-editor/
 - Handles mouse events for rectangle selection
 - Draws selection rectangle overlay
 - Converts between screen and normalized coordinates
+- Uses the fitted preview image rect, not the full widget bounds, when mapping selection coordinates
 
 #### VideoList
 - Displays queue of imported videos
@@ -180,6 +181,12 @@ reelbatch-editor/
 - All selections stored as percentages (0-100)
 - Independent of video resolution
 - Format: `{x_percent, y_percent, width_percent, height_percent}`
+
+### Preview-to-Video Mapping
+- The preview image is scaled to fit inside the canvas while preserving aspect ratio
+- Any leftover space becomes letterboxing/padding and is excluded from selection math
+- Mouse drag points are clamped to the displayed image rect before conversion
+- Normalized values are computed from the clamped image-relative rectangle, so resizing the window only changes the on-screen projection, not the stored percentages
 
 ### Pixel Coordinates
 - Used for FFmpeg commands

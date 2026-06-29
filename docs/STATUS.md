@@ -2,7 +2,7 @@
 
 ## Current Stage
 
-Phase 3: Video import and preview complete. Ready for rectangle selection implementation.
+Phase 4: Rectangle selection complete. Ready for export pipeline work.
 
 ## Phase 2 Completed (UI Skeleton)
 
@@ -42,17 +42,30 @@ Phase 3: Video import and preview complete. Ready for rectangle selection implem
 - [x] Added user-friendly error messages for import failures
 - [x] Status bar shows import results and selected video info
 
+## Phase 4 Completed (Rectangle Selection)
+
+- [x] Added mouse-driven rectangle selection on the preview canvas
+- [x] Limited selection to the displayed video image area
+- [x] Handled scaled previews with letterboxing/padding correctly
+- [x] Stored selection as normalized video percentages
+- [x] Ignored tiny accidental selections below the drag threshold
+- [x] Kept selection visible after mouse release and window resize
+- [x] Added preview canvas selection signal and public selection API
+- [x] Added Selection controls and values to the Edit Settings panel
+- [x] Preserved normalized selection when switching videos in the queue
+- [x] Added unit tests for preview-to-video coordinate conversion math
+
 ## Current Goal
 
-Implement video import and preview functionality (Phase 3).
+Implement FFmpeg processing modes and batch export using the normalized selection data.
 
 ## Next Steps
 
-1. Implement video file import using QFileDialog
-2. Add OpenCV integration for preview frame extraction
-3. Display video metadata in the queue
-4. Implement rectangle selection on preview canvas
-5. Store selection as normalized percentages
+1. Implement blur export using the normalized selection rectangle
+2. Implement logo/image overlay export using the normalized selection rectangle
+3. Implement zoom/crop export mode
+4. Add background FFmpeg export worker flow
+5. Persist selection and mode settings in presets
 
 ## MVP Features
 
@@ -60,10 +73,10 @@ Implement video import and preview functionality (Phase 3).
 * [x] Add modern main window layout
 * [x] Add video import button
 * [x] Add video queue/list
-* [ ] Extract preview frame from first video
+* [x] Extract preview frame from first video
 * [x] Add preview canvas
-* [ ] Allow rectangle selection on preview
-* [ ] Store rectangle as normalized percentages
+* [x] Allow rectangle selection on preview
+* [x] Store rectangle as normalized percentages
 * [x] Add output folder picker
 * [ ] Add blur selected area export mode
 * [ ] Add logo/image overlay export mode
@@ -81,6 +94,7 @@ Implement video import and preview functionality (Phase 3).
 * Preview/dimensions: OpenCV
 * Packaging: PyInstaller
 * First selection tool: rectangle only
+* Selection storage: normalized percentages with preview-space clamping
 
 ## Not in MVP
 

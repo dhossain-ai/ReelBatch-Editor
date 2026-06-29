@@ -67,18 +67,20 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed roadmap.
 
 ## Current Status
 
-**Stage:** Phase 3 complete - video import, queue management, and preview frames implemented.
+**Stage:** Phase 4 complete - normalized rectangle selection is now implemented on the preview canvas.
 
 **Progress:**
 - [x] GitHub repository initialized
 - [x] Documentation structure created
-- [x] Development environment setup
 - [x] Core UI implementation (PySide6 with dark theme)
-- [x] Video import and preview integration
-- [ ] Export functionality
+- [x] Video import, metadata reading, and preview integration
+- [x] Rectangle selection overlay with normalized percentage storage
+- [x] Selection values shown in the Edit Settings panel
+- [x] Coordinate conversion tests for scaled and letterboxed previews
+- [ ] FFmpeg processing/export functionality
 - [ ] Windows EXE packaging
 
-The app now launches successfully with a modern dark UI layout. Videos can be imported in batches, metadata is shown in the queue, and the selected clip preview updates from OpenCV frames.
+The app now supports importing multiple videos, previewing frames, drawing a reusable rectangle selection, and keeping that selection consistent across resize events and video switches.
 
 See [docs/STATUS.md](docs/STATUS.md) for detailed task checklist.
 
