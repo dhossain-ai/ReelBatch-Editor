@@ -32,6 +32,12 @@ from PySide6.QtWidgets import (
 from app.preview_canvas import PreviewCanvas
 from app.video_queue import VideoQueue
 from core.app_settings import AppSettings, AppSettingsStore
+from core.export_recipe import (
+    build_area_cleanup_status,
+    build_recipe_summary,
+    recipe_state_to_legacy_processing_mode,
+    validate_recipe_export_request,
+)
 from core.export_worker import (
     BatchExportSummary,
     ExportSettings,
@@ -58,25 +64,14 @@ from core.output_resolution import (
     build_output_standardization,
 )
 from core.presets import ExportPreset, PresetStore
-from core.processing_modes import (
-    PROCESSING_MODE_BLUR,
-    PROCESSING_MODE_LOGO,
-    PROCESSING_MODE_ZOOM,
-    processing_mode_progress_label,
-    processing_mode_status_text,
-    validate_export_request,
-)
+from core.processing_modes import PROCESSING_MODE_BLUR, PROCESSING_MODE_LOGO
 from core.selection import NormalizedSelection
 from core.video_probe import VideoInfo, frame_to_qimage, read_video_metadata
 from core.workflow import (
-    AREA_CLEANUP_OPTIONS,
-    AREA_CLEANUP_OPTION_NONE,
     build_workflow_hint,
-    derive_processing_mode,
     format_playback_time,
     frame_index_for_time,
     playback_interval_ms,
-    workflow_state_from_processing_mode,
 )
 
 
@@ -116,6 +111,7 @@ class MainWindow(QMainWindow):
         self.load_app_settings()
         self.update_mode_controls()
         self.update_output_resolution_controls()
+        self.update_recipe_summary()
         self.update_workflow_hint()
         self.update_action_states()
 
@@ -193,7 +189,7 @@ class MainWindow(QMainWindow):
         settings_layout.setContentsMargins(16, 16, 16, 16)
         settings_layout.setSpacing(14)
 
-        settings_title = QLabel("Creator Workflow")
+        settings_title = QLabel("Export Recipe")
         settings_title.setObjectName("panelTitle")
         settings_layout.addWidget(settings_title)
 
@@ -203,13 +199,32 @@ class MainWindow(QMainWindow):
         self.workflow_hint_label.setMinimumHeight(72)
         settings_layout.addWidget(self.workflow_hint_label)
 
+        self.recipe_summary_label = QLabel("Missing: enable at least one effect or output option")
+        self.recipe_summary_label.setWordWrap(True)
+        self.recipe_summary_label.setObjectName("recipeSummaryCard")
+        self.recipe_summary_label.setStyleSheet(
+            "QLabel { background-color: #1f313c; color: #d9f2ff; border: 1px solid #29526a; "
+            "border-radius: 10px; padding: 12px 14px; font-size: 13px; font-weight: 600; }"
+        )
+        settings_layout.addWidget(self.recipe_summary_label)
+
         self.area_cleanup_section, area_layout = self._create_section(
             "Area Cleanup",
-            "Choose how to handle the selected logo or watermark area.",
+            "Turn this on when you want to blur or cover the selected logo/watermark area.",
         )
-        area_layout.addWidget(self._create_field_label("Area Cleanup"))
+        area_toggle_row = QHBoxLayout()
+        area_toggle_row.setSpacing(10)
+        self.area_cleanup_checkbox = QCheckBox("Enable area cleanup")
+        area_toggle_row.addWidget(self.area_cleanup_checkbox, stretch=1)
+        self.area_cleanup_status_badge = QLabel("Off")
+        self.area_cleanup_status_badge.setAlignment(Qt.AlignCenter)
+        self.area_cleanup_status_badge.setMinimumWidth(104)
+        area_toggle_row.addWidget(self.area_cleanup_status_badge)
+        area_layout.addLayout(area_toggle_row)
+
+        area_layout.addWidget(self._create_field_label("Cleanup Type"))
         self.area_cleanup_combo = QComboBox()
-        self.area_cleanup_combo.addItems(list(AREA_CLEANUP_OPTIONS))
+        self.area_cleanup_combo.addItems([PROCESSING_MODE_BLUR, PROCESSING_MODE_LOGO])
         self.area_cleanup_combo.setStyleSheet(self._combo_style())
         self._configure_panel_control(self.area_cleanup_combo, minimum_width=220)
         area_layout.addWidget(self.area_cleanup_combo)
@@ -220,8 +235,13 @@ class MainWindow(QMainWindow):
         self.area_cleanup_helper_label.setObjectName("accentHelperLabel")
         area_layout.addWidget(self.area_cleanup_helper_label)
 
-        self.mode_help_label = self._create_helper_label()
-        area_layout.addWidget(self.mode_help_label)
+        self.selection_requirement_label = self._create_helper_label()
+        area_layout.addWidget(self.selection_requirement_label)
+
+        self.area_cleanup_controls = QWidget()
+        area_cleanup_controls_layout = QVBoxLayout(self.area_cleanup_controls)
+        area_cleanup_controls_layout.setContentsMargins(0, 0, 0, 0)
+        area_cleanup_controls_layout.setSpacing(10)
 
         self.blur_controls = QWidget()
         self.blur_controls.setObjectName("modeControls")
@@ -242,7 +262,7 @@ class MainWindow(QMainWindow):
         self.blur_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         blur_row.addWidget(self.blur_value_label)
         blur_layout.addLayout(blur_row)
-        area_layout.addWidget(self.blur_controls)
+        area_cleanup_controls_layout.addWidget(self.blur_controls)
 
         self.logo_controls = QWidget()
         self.logo_controls.setObjectName("modeControls")
@@ -255,7 +275,10 @@ class MainWindow(QMainWindow):
         logo_layout.addWidget(self.logo_button)
         self.logo_file_label = self._create_helper_label("No logo/image selected")
         logo_layout.addWidget(self.logo_file_label)
-        area_layout.addWidget(self.logo_controls)
+        area_cleanup_controls_layout.addWidget(self.logo_controls)
+
+        self.show_selection_details_checkbox = QCheckBox("Show selection details")
+        area_cleanup_controls_layout.addWidget(self.show_selection_details_checkbox)
 
         self.selection_section = QFrame()
         self.selection_section.setObjectName("selectionCard")
@@ -268,8 +291,10 @@ class MainWindow(QMainWindow):
         selection_title.setObjectName("sectionTitle")
         selection_layout.addWidget(selection_title)
 
-        self.selection_requirement_label = self._create_helper_label()
-        selection_layout.addWidget(self.selection_requirement_label)
+        self.selection_details_label = self._create_helper_label(
+            "Selection values are hidden by default so the recipe stays easier to scan."
+        )
+        selection_layout.addWidget(self.selection_details_label)
 
         selection_grid = QGridLayout()
         selection_grid.setHorizontalSpacing(12)
@@ -299,21 +324,23 @@ class MainWindow(QMainWindow):
         self._set_secondary_button_style(self.clear_selection_button)
         self._configure_panel_control(self.clear_selection_button)
         selection_layout.addWidget(self.clear_selection_button)
-        area_layout.addWidget(self.selection_section)
+        area_cleanup_controls_layout.addWidget(self.selection_section)
+        area_layout.addWidget(self.area_cleanup_controls)
 
         settings_layout.addWidget(self.area_cleanup_section)
 
         self.transform_section, transform_layout = self._create_section(
-            "Transform",
-            "Zoom/crop is available as its own export mode for this phase.",
+            "Optional Zoom",
+            "Turn this on when you want an extra zoom/crop step before the final output size.",
         )
         self.apply_zoom_checkbox = QCheckBox("Apply zoom/crop")
         transform_layout.addWidget(self.apply_zoom_checkbox)
 
-        self.transform_help_label = self._create_helper_label()
-        transform_layout.addWidget(self.transform_help_label)
-
-        transform_layout.addWidget(self._create_field_label("Zoom Percentage"))
+        self.zoom_controls = QWidget()
+        zoom_controls_layout = QVBoxLayout(self.zoom_controls)
+        zoom_controls_layout.setContentsMargins(0, 0, 0, 0)
+        zoom_controls_layout.setSpacing(8)
+        zoom_controls_layout.addWidget(self._create_field_label("Zoom Percentage"))
         zoom_row = QHBoxLayout()
         zoom_row.setSpacing(10)
         self.zoom_slider = QSlider(Qt.Horizontal)
@@ -326,28 +353,34 @@ class MainWindow(QMainWindow):
         self.zoom_value_label.setMinimumWidth(44)
         self.zoom_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         zoom_row.addWidget(self.zoom_value_label)
-        transform_layout.addLayout(zoom_row)
+        zoom_controls_layout.addLayout(zoom_row)
+        self.zoom_help_label = self._create_helper_label(
+            "Zoom/crop runs after area cleanup and before output size standardization."
+        )
+        zoom_controls_layout.addWidget(self.zoom_help_label)
+        transform_layout.addWidget(self.zoom_controls)
         settings_layout.addWidget(self.transform_section)
 
-        self.output_section, output_layout = self._create_section(
-            "Output",
-            "Choose where files go and how they should be encoded.",
+        self.output_size_section, output_size_layout = self._create_section(
+            "Output Size",
+            "Turn this on to standardize every export to the same vertical resolution.",
         )
-        output_layout.addWidget(self._create_field_label("Output Folder"))
-        self.output_button = QPushButton("Choose Output Folder")
-        self._set_secondary_button_style(self.output_button)
-        self._configure_panel_control(self.output_button, minimum_width=220)
-        output_layout.addWidget(self.output_button)
-        self.output_folder_label = self._create_helper_label("No output folder selected")
-        output_layout.addWidget(self.output_folder_label)
+        self.output_size_checkbox = QCheckBox("Standardize output size")
+        output_size_layout.addWidget(self.output_size_checkbox)
 
-        output_layout.addWidget(self._create_field_label("Output Resolution"))
+        self.output_size_controls = QWidget()
+        output_size_controls_layout = QVBoxLayout(self.output_size_controls)
+        output_size_controls_layout.setContentsMargins(0, 0, 0, 0)
+        output_size_controls_layout.setSpacing(8)
+        output_size_controls_layout.addWidget(self._create_field_label("Output Resolution"))
         self.output_resolution_combo = QComboBox()
-        self.output_resolution_combo.addItems(list(OUTPUT_RESOLUTION_OPTIONS))
+        self.output_resolution_combo.addItems(
+            [option for option in OUTPUT_RESOLUTION_OPTIONS if option != OUTPUT_RESOLUTION_KEEP_ORIGINAL]
+        )
         self.output_resolution_combo.setCurrentText(DEFAULT_OUTPUT_RESOLUTION)
         self.output_resolution_combo.setStyleSheet(self._combo_style())
         self._configure_panel_control(self.output_resolution_combo, minimum_width=220)
-        output_layout.addWidget(self.output_resolution_combo)
+        output_size_controls_layout.addWidget(self.output_resolution_combo)
 
         self.custom_resolution_controls = QWidget()
         custom_resolution_layout = QHBoxLayout(self.custom_resolution_controls)
@@ -373,18 +406,32 @@ class MainWindow(QMainWindow):
         self.custom_output_height_spin.setValue(1920)
         self._configure_panel_control(self.custom_output_height_spin, minimum_width=90)
         custom_resolution_layout.addWidget(self.custom_output_height_spin)
-        output_layout.addWidget(self.custom_resolution_controls)
+        output_size_controls_layout.addWidget(self.custom_resolution_controls)
 
-        output_layout.addWidget(self._create_field_label("Resize Mode"))
+        output_size_controls_layout.addWidget(self._create_field_label("Fit Mode"))
         self.resize_mode_combo = QComboBox()
         self.resize_mode_combo.addItems(list(RESIZE_MODE_OPTIONS))
         self.resize_mode_combo.setCurrentText(DEFAULT_RESIZE_MODE)
         self.resize_mode_combo.setStyleSheet(self._combo_style())
         self._configure_panel_control(self.resize_mode_combo, minimum_width=220)
-        output_layout.addWidget(self.resize_mode_combo)
+        output_size_controls_layout.addWidget(self.resize_mode_combo)
 
         self.output_resolution_help_label = self._create_helper_label()
-        output_layout.addWidget(self.output_resolution_help_label)
+        output_size_controls_layout.addWidget(self.output_resolution_help_label)
+        output_size_layout.addWidget(self.output_size_controls)
+        settings_layout.addWidget(self.output_size_section)
+
+        self.export_settings_section, output_layout = self._create_section(
+            "Export Settings",
+            "Choose where files go and how they should be encoded.",
+        )
+        output_layout.addWidget(self._create_field_label("Output Folder"))
+        self.output_button = QPushButton("Choose Output Folder")
+        self._set_secondary_button_style(self.output_button)
+        self._configure_panel_control(self.output_button, minimum_width=220)
+        output_layout.addWidget(self.output_button)
+        self.output_folder_label = self._create_helper_label("No output folder selected")
+        output_layout.addWidget(self.output_folder_label)
 
         output_layout.addWidget(self._create_field_label("Output Quality"))
         self.output_quality_combo = QComboBox()
@@ -405,7 +452,7 @@ class MainWindow(QMainWindow):
             "Auto uses NVIDIA GPU encoding when available and falls back to CPU if needed."
         )
         output_layout.addWidget(self.encoder_help_label)
-        settings_layout.addWidget(self.output_section)
+        settings_layout.addWidget(self.export_settings_section)
 
         self.presets_section, presets_layout = self._create_section(
             "Presets",
@@ -478,8 +525,11 @@ class MainWindow(QMainWindow):
         self.timeline_slider.sliderReleased.connect(self.on_timeline_scrub_finished)
         self.timeline_slider.valueChanged.connect(self.on_timeline_value_changed)
 
+        self.area_cleanup_checkbox.toggled.connect(self.on_area_cleanup_toggle_changed)
         self.area_cleanup_combo.currentTextChanged.connect(self.on_area_cleanup_changed)
         self.apply_zoom_checkbox.toggled.connect(self.on_zoom_toggle_changed)
+        self.output_size_checkbox.toggled.connect(self.on_output_size_toggle_changed)
+        self.show_selection_details_checkbox.toggled.connect(self.on_show_selection_details_changed)
         self.logo_button.clicked.connect(self.on_select_logo)
         self.output_button.clicked.connect(self.on_select_output)
         self.save_preset_button.clicked.connect(self.on_save_preset)
@@ -492,10 +542,13 @@ class MainWindow(QMainWindow):
 
         self.blur_slider.valueChanged.connect(self.update_slider_labels)
         self.zoom_slider.valueChanged.connect(self.update_slider_labels)
+        self.blur_slider.valueChanged.connect(self.on_recipe_controls_changed)
+        self.zoom_slider.valueChanged.connect(self.on_recipe_controls_changed)
         self.blur_slider.valueChanged.connect(self.on_persistent_setting_changed)
         self.zoom_slider.valueChanged.connect(self.on_persistent_setting_changed)
         self.encoder_combo.currentTextChanged.connect(self.on_persistent_setting_changed)
         self.output_quality_combo.currentTextChanged.connect(self.on_persistent_setting_changed)
+        self.encoder_combo.currentTextChanged.connect(self.update_recipe_summary)
 
         self.export_button.clicked.connect(self.on_export_all)
         self.test_export_button.clicked.connect(self.on_test_export_current_video)
@@ -527,6 +580,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.status_label.setText("Queue cleared")
         self.update_mode_controls()
+        self.update_recipe_summary()
         self.update_workflow_hint()
         self.update_action_states()
 
@@ -750,6 +804,7 @@ class MainWindow(QMainWindow):
         """Update the settings panel when the canvas selection changes."""
         self.current_selection = NormalizedSelection.from_mapping(selection)
         self.update_selection_display(self.current_selection)
+        self.update_recipe_summary()
         self.update_workflow_hint()
         self.update_mode_controls()
         self.status_label.setText("Selection updated" if self.current_selection else "Selection cleared")
@@ -769,57 +824,84 @@ class MainWindow(QMainWindow):
         for key, value_label in self.selection_value_labels.items():
             value_label.setText(f"{normalized[key]:.2f}")
 
-    def get_current_processing_mode(self) -> Optional[str]:
-        """Return the currently active export mode derived from the simplified UI."""
-        return derive_processing_mode(
-            self.area_cleanup_combo.currentText(),
-            self.apply_zoom_checkbox.isChecked(),
+    def build_recipe(self):
+        """Return the current export recipe state from the UI."""
+        from core.export_recipe import ExportRecipe
+
+        return ExportRecipe(
+            area_cleanup_enabled=self.area_cleanup_checkbox.isChecked(),
+            cleanup_type=self.area_cleanup_combo.currentText(),
+            blur_strength=self.blur_slider.value(),
+            zoom_enabled=self.apply_zoom_checkbox.isChecked(),
+            zoom_percent=self.zoom_slider.value(),
+            output_standardization_enabled=self.output_size_checkbox.isChecked(),
+            output_resolution=self.output_resolution_combo.currentText(),
+            resize_mode=self.resize_mode_combo.currentText(),
+            custom_output_width=self.custom_output_width_spin.value(),
+            custom_output_height=self.custom_output_height_spin.value(),
+            output_quality=self.output_quality_combo.currentText(),
+            selection=self.current_selection,
+            overlay_image_path=self.logo_image_path,
         )
 
-    def on_area_cleanup_changed(self, area_cleanup_mode: str) -> None:
-        """Keep the simplified cleanup and transform controls in a clear state."""
-        if self._is_syncing_workflow_controls:
-            return
+    def get_encoder_summary_label(self) -> str:
+        """Return a short encoder label for the live recipe summary."""
+        if self.encoder_combo.currentText() == ENCODER_OPTION_CPU:
+            return "CPU export"
+        return "GPU export"
 
-        self._is_syncing_workflow_controls = True
-        try:
-            if area_cleanup_mode != AREA_CLEANUP_OPTION_NONE and self.apply_zoom_checkbox.isChecked():
-                self.apply_zoom_checkbox.setChecked(False)
-        finally:
-            self._is_syncing_workflow_controls = False
-
+    def on_area_cleanup_toggle_changed(self, checked: bool) -> None:
+        """Refresh recipe state when the Area Cleanup toggle changes."""
         self.update_mode_controls()
         self.update_workflow_hint()
+        self.update_recipe_summary()
         self.on_persistent_setting_changed()
-        if area_cleanup_mode != AREA_CLEANUP_OPTION_NONE:
-            self.status_label.setText(processing_mode_status_text(area_cleanup_mode))
+        self.status_label.setText("Area cleanup enabled" if checked else "Area cleanup disabled")
+
+    def on_area_cleanup_changed(self, _area_cleanup_mode: str) -> None:
+        """Refresh recipe state when the cleanup type changes."""
+        self.update_mode_controls()
+        self.update_workflow_hint()
+        self.update_recipe_summary()
+        self.on_persistent_setting_changed()
+        if self.area_cleanup_checkbox.isChecked():
+            self.status_label.setText(f"Cleanup type: {self.area_cleanup_combo.currentText()}")
 
     def on_zoom_toggle_changed(self, checked: bool) -> None:
-        """Keep zoom/crop distinct from area cleanup for this phase."""
-        if self._is_syncing_workflow_controls:
-            return
-
-        self._is_syncing_workflow_controls = True
-        try:
-            if checked and self.area_cleanup_combo.currentText() != AREA_CLEANUP_OPTION_NONE:
-                self.area_cleanup_combo.setCurrentText(AREA_CLEANUP_OPTION_NONE)
-        finally:
-            self._is_syncing_workflow_controls = False
-
+        """Refresh recipe state when the zoom toggle changes."""
         self.update_mode_controls()
         self.update_workflow_hint()
+        self.update_recipe_summary()
         self.on_persistent_setting_changed()
-        if checked:
-            self.status_label.setText(processing_mode_status_text(PROCESSING_MODE_ZOOM))
+        self.status_label.setText("Zoom/crop enabled" if checked else "Zoom/crop disabled")
+
+    def on_output_size_toggle_changed(self, checked: bool) -> None:
+        """Refresh recipe state when the output-size toggle changes."""
+        self.update_output_resolution_controls()
+        self.update_workflow_hint()
+        self.update_recipe_summary()
+        self.on_persistent_setting_changed()
+        self.status_label.setText("Output size standardization enabled" if checked else "Keeping original size")
+
+    def on_show_selection_details_changed(self, checked: bool) -> None:
+        """Show or hide advanced selection details."""
+        self.selection_section.setVisible(checked and self.area_cleanup_checkbox.isChecked())
+
+    def on_recipe_controls_changed(self, *_args) -> None:
+        """Refresh recipe messaging when effect values change."""
+        self.update_mode_controls()
+        self.update_recipe_summary()
 
     def on_output_resolution_changed(self, _value: str) -> None:
         """Refresh custom resolution controls and persist the new choice."""
         self.update_output_resolution_controls()
+        self.update_recipe_summary()
         self.on_persistent_setting_changed()
 
     def on_resize_mode_changed(self, _value: str) -> None:
         """Refresh helper text and persist the new resize mode."""
         self.update_output_resolution_controls()
+        self.update_recipe_summary()
         self.on_persistent_setting_changed()
 
     def on_custom_resolution_changed(self, value: int) -> None:
@@ -829,67 +911,78 @@ class MainWindow(QMainWindow):
             with QSignalBlocker(spinbox):
                 spinbox.setValue(value + 1)
         self.update_output_resolution_controls()
+        self.update_recipe_summary()
         self.on_persistent_setting_changed()
 
     def update_mode_controls(self) -> None:
-        """Show only the most relevant controls for the current workflow choice."""
-        current_mode = self.get_current_processing_mode()
-        area_cleanup_mode = self.area_cleanup_combo.currentText()
-        is_blur_mode = area_cleanup_mode == PROCESSING_MODE_BLUR and current_mode == PROCESSING_MODE_BLUR
-        is_logo_mode = area_cleanup_mode == PROCESSING_MODE_LOGO and current_mode == PROCESSING_MODE_LOGO
-        is_zoom_mode = current_mode == PROCESSING_MODE_ZOOM
+        """Show only the settings that belong to enabled recipe steps."""
+        recipe = self.build_recipe()
+        area_cleanup_enabled = recipe.area_cleanup_enabled
+        is_blur_mode = area_cleanup_enabled and recipe.cleanup_type == PROCESSING_MODE_BLUR
+        is_logo_mode = area_cleanup_enabled and recipe.cleanup_type == PROCESSING_MODE_LOGO
 
+        self.area_cleanup_combo.setEnabled(area_cleanup_enabled)
+        self.area_cleanup_controls.setVisible(area_cleanup_enabled)
         self.blur_controls.setVisible(is_blur_mode)
         self.blur_controls.setEnabled(is_blur_mode)
         self.logo_controls.setVisible(is_logo_mode)
         self.logo_controls.setEnabled(is_logo_mode)
-        zoom_enabled = self.apply_zoom_checkbox.isChecked()
+        self.show_selection_details_checkbox.setVisible(area_cleanup_enabled)
+        self.selection_section.setVisible(
+            area_cleanup_enabled and self.show_selection_details_checkbox.isChecked()
+        )
+
+        if not area_cleanup_enabled:
+            self.selection_requirement_label.setText(
+                "Turn Area Cleanup on if you want the selected rectangle to affect export."
+            )
+        elif is_blur_mode and recipe.selection is None:
+            self.selection_requirement_label.setText("Draw the rectangle that should be blurred.")
+        elif is_blur_mode:
+            self.selection_requirement_label.setText("Selected area will be blurred during export.")
+        elif recipe.selection is None:
+            self.selection_requirement_label.setText("Draw the rectangle that should be covered.")
+        elif recipe.overlay_image_path is None:
+            self.selection_requirement_label.setText("Choose the logo/image that should cover this area.")
+        else:
+            self.selection_requirement_label.setText("Selected area will be covered by the chosen image.")
+
+        self._set_status_badge(self.area_cleanup_status_badge, build_area_cleanup_status(recipe))
+
+        zoom_enabled = recipe.zoom_enabled
+        self.zoom_controls.setVisible(zoom_enabled)
         self.zoom_slider.setEnabled(zoom_enabled)
         self.zoom_value_label.setEnabled(zoom_enabled)
 
-        if is_zoom_mode:
-            self.mode_help_label.setText(processing_mode_status_text(PROCESSING_MODE_ZOOM))
-            self.transform_help_label.setText("Zoom/crop is active. The rectangle selection is not used for export.")
-            self.selection_requirement_label.setText(
-                "Rectangle selection is optional right now because zoom/crop exports do not use it."
-            )
-        elif is_blur_mode:
-            self.mode_help_label.setText(processing_mode_status_text(PROCESSING_MODE_BLUR))
-            self.transform_help_label.setText("Enable zoom/crop when you want a separate zoom-only export.")
-            self.selection_requirement_label.setText("This selection will be blurred during export.")
-        elif is_logo_mode:
-            self.mode_help_label.setText(processing_mode_status_text(PROCESSING_MODE_LOGO))
-            self.transform_help_label.setText("Enable zoom/crop when you want a separate zoom-only export.")
-            self.selection_requirement_label.setText("This selection will be covered by your chosen logo/image.")
-        else:
-            self.mode_help_label.setText("Choose an Area Cleanup option or enable zoom/crop before exporting.")
-            self.transform_help_label.setText("The zoom slider is only active when Apply zoom/crop is enabled.")
-            self.selection_requirement_label.setText(
-                "Draw a rectangle now if you plan to blur or cover a logo/watermark area."
-            )
-
     def update_output_resolution_controls(self) -> None:
-        """Show custom resolution inputs only when they are relevant."""
+        """Show output-size controls only when standardization is enabled."""
+        output_size_enabled = self.output_size_checkbox.isChecked()
+        self.output_size_controls.setVisible(output_size_enabled)
+        self.output_resolution_combo.setEnabled(output_size_enabled)
+        self.resize_mode_combo.setEnabled(output_size_enabled)
+
         selected_resolution = self.output_resolution_combo.currentText()
         is_custom_resolution = selected_resolution == OUTPUT_RESOLUTION_CUSTOM
-        self.custom_resolution_controls.setVisible(is_custom_resolution)
-        self.custom_output_width_spin.setEnabled(is_custom_resolution)
-        self.custom_output_height_spin.setEnabled(is_custom_resolution)
+        self.custom_resolution_controls.setVisible(output_size_enabled and is_custom_resolution)
+        self.custom_output_width_spin.setEnabled(output_size_enabled and is_custom_resolution)
+        self.custom_output_height_spin.setEnabled(output_size_enabled and is_custom_resolution)
+
+        if not output_size_enabled:
+            self.output_resolution_help_label.setText("Original video resolution will be kept.")
+            return
 
         selected_resize_mode = self.resize_mode_combo.currentText()
         if selected_resolution == DEFAULT_OUTPUT_RESOLUTION:
-            resolution_text = "1080x1920 is recommended for standard vertical reels."
+            resolution_text = "1080x1920 is recommended for Facebook Reels and YouTube Shorts."
         elif selected_resolution == OUTPUT_RESOLUTION_CUSTOM:
             resolution_text = "Custom width and height must stay positive even numbers."
         else:
             resolution_text = f"Exports will be standardized to {selected_resolution}."
 
-        if selected_resolution == OUTPUT_RESOLUTION_KEEP_ORIGINAL:
-            resize_text = "Keep original skips final resizing and leaves the source dimensions unchanged."
-        elif selected_resize_mode == RESIZE_MODE_FILL_AND_CROP:
+        if selected_resize_mode == RESIZE_MODE_FILL_AND_CROP:
             resize_text = "Fill & Crop scales to fill the frame and center-crops overflow."
         else:
-            resize_text = "Fit with Padding preserves the full frame and pads any empty space."
+            resize_text = "Fit with Padding preserves the full frame and pads empty space."
 
         self.output_resolution_help_label.setText(f"{resolution_text} {resize_text}")
 
@@ -898,45 +991,72 @@ class MainWindow(QMainWindow):
         self.blur_value_label.setText(f"{self.blur_slider.value()}")
         self.zoom_value_label.setText(f"{self.zoom_slider.value()}%")
 
+    def update_recipe_summary(self) -> None:
+        """Refresh the live export recipe summary."""
+        self.recipe_summary_label.setText(
+            build_recipe_summary(
+                self.build_recipe(),
+                encoder_summary=self.get_encoder_summary_label(),
+            )
+        )
+
     def update_workflow_hint(self) -> None:
         """Refresh the guided workflow hint based on the current app state."""
+        recipe = self.build_recipe()
         self.workflow_hint_label.setText(
             build_workflow_hint(
                 video_count=self.video_queue.get_video_count(),
                 has_selection=self.current_selection is not None,
-                processing_mode=self.get_current_processing_mode(),
+                processing_mode=recipe_state_to_legacy_processing_mode(
+                    recipe.area_cleanup_enabled,
+                    recipe.cleanup_type,
+                    recipe.zoom_enabled,
+                )
+                or None,
                 has_output_directory=self.output_directory is not None,
                 is_exporting=self.export_worker is not None,
+                recipe_enabled=recipe.has_active_steps(),
+                area_cleanup_enabled=recipe.area_cleanup_enabled,
             )
         )
 
     def build_current_preset(self, preset_name: str) -> ExportPreset:
         """Build a preset object from the current workflow state."""
-        processing_mode = self.get_current_processing_mode() or self.area_cleanup_combo.currentText()
+        recipe = self.build_recipe()
         return ExportPreset(
             name=preset_name,
-            processing_mode=processing_mode,
-            blur_strength=self.blur_slider.value(),
-            zoom_percentage=self.zoom_slider.value(),
+            processing_mode=recipe_state_to_legacy_processing_mode(
+                recipe.area_cleanup_enabled,
+                recipe.cleanup_type,
+                recipe.zoom_enabled,
+            ),
+            area_cleanup_enabled=recipe.area_cleanup_enabled,
+            cleanup_type=recipe.cleanup_type,
+            blur_strength=recipe.blur_strength,
+            zoom_enabled=recipe.zoom_enabled,
+            zoom_percentage=recipe.zoom_percent,
             encoder_preference=self.encoder_combo.currentText(),
             output_quality=self.output_quality_combo.currentText(),
-            output_resolution=self.output_resolution_combo.currentText(),
-            resize_mode=self.resize_mode_combo.currentText(),
-            custom_output_width=self.custom_output_width_spin.value(),
-            custom_output_height=self.custom_output_height_spin.value(),
+            output_standardization_enabled=recipe.output_standardization_enabled,
+            output_resolution=recipe.output_resolution,
+            resize_mode=recipe.resize_mode,
+            custom_output_width=recipe.custom_output_width,
+            custom_output_height=recipe.custom_output_height,
             selection=self.current_selection,
             logo_image_path=str(self.logo_image_path) if self.logo_image_path else None,
+            output_folder=str(self.output_directory) if self.output_directory else None,
         )
 
     def apply_preset(self, preset: ExportPreset) -> Optional[str]:
         """Apply a loaded preset and return any friendly warning text."""
         self.current_selection = preset.selection
 
-        area_cleanup_mode, apply_zoom = workflow_state_from_processing_mode(preset.processing_mode)
         self._is_syncing_workflow_controls = True
         try:
-            self.area_cleanup_combo.setCurrentText(area_cleanup_mode)
-            self.apply_zoom_checkbox.setChecked(apply_zoom)
+            self.area_cleanup_checkbox.setChecked(preset.area_cleanup_enabled)
+            self.area_cleanup_combo.setCurrentText(preset.cleanup_type)
+            self.apply_zoom_checkbox.setChecked(preset.zoom_enabled)
+            self.output_size_checkbox.setChecked(preset.output_standardization_enabled)
         finally:
             self._is_syncing_workflow_controls = False
 
@@ -944,7 +1064,8 @@ class MainWindow(QMainWindow):
         self.zoom_slider.setValue(preset.zoom_percentage)
         self.encoder_combo.setCurrentText(preset.encoder_preference)
         self.output_quality_combo.setCurrentText(preset.output_quality)
-        self.output_resolution_combo.setCurrentText(preset.output_resolution)
+        if preset.output_resolution != OUTPUT_RESOLUTION_KEEP_ORIGINAL:
+            self.output_resolution_combo.setCurrentText(preset.output_resolution)
         self.resize_mode_combo.setCurrentText(preset.resize_mode)
         self.custom_output_width_spin.setValue(preset.custom_output_width)
         self.custom_output_height_spin.setValue(preset.custom_output_height)
@@ -967,10 +1088,15 @@ class MainWindow(QMainWindow):
             self.logo_file_label.setText("No logo/image selected")
             warning_text = None
 
+        if preset.output_folder:
+            self.output_directory = Path(preset.output_folder)
+            self.output_folder_label.setText(str(self.output_directory))
+
         self.preview_canvas.set_normalized_selection(self.current_selection)
         self.update_selection_display(self.current_selection)
         self.update_mode_controls()
         self.update_output_resolution_controls()
+        self.update_recipe_summary()
         self.update_workflow_hint()
         return warning_text
 
@@ -988,6 +1114,8 @@ class MainWindow(QMainWindow):
         self.logo_image_path = Path(selected_file)
         self.logo_file_label.setText(str(self.logo_image_path))
         self.status_label.setText("Logo/image selected")
+        self.update_mode_controls()
+        self.update_recipe_summary()
         self.update_workflow_hint()
 
     def on_select_output(self) -> None:
@@ -1000,11 +1128,15 @@ class MainWindow(QMainWindow):
         self.output_folder_label.setText(str(self.output_directory))
         self.status_label.setText("Output folder selected")
         self.save_app_settings()
+        self.update_recipe_summary()
         self.update_workflow_hint()
 
     def on_save_preset(self) -> None:
         """Save the current settings to the app-data preset store and optionally export JSON."""
-        suggested_name = self.get_current_processing_mode() or self.area_cleanup_combo.currentText()
+        suggested_name = "Export Recipe"
+        summary_text = self.recipe_summary_label.text()
+        if summary_text.startswith("Will apply: "):
+            suggested_name = summary_text.removeprefix("Will apply: ").replace(" -> ", " + ")
         preset_name, accepted = QInputDialog.getText(
             self,
             "Save Preset",
@@ -1061,18 +1193,26 @@ class MainWindow(QMainWindow):
 
     def build_app_settings(self) -> AppSettings:
         """Capture the currently persistent UI state."""
-        current_mode = self.get_current_processing_mode() or self.area_cleanup_combo.currentText()
+        recipe = self.build_recipe()
         return AppSettings(
             last_output_folder=str(self.output_directory) if self.output_directory else None,
             last_encoder_selection=self.encoder_combo.currentText(),
-            last_processing_mode=current_mode,
-            last_zoom_percentage=self.zoom_slider.value(),
-            last_blur_strength=self.blur_slider.value(),
+            last_processing_mode=recipe_state_to_legacy_processing_mode(
+                recipe.area_cleanup_enabled,
+                recipe.cleanup_type,
+                recipe.zoom_enabled,
+            ),
+            area_cleanup_enabled=recipe.area_cleanup_enabled,
+            cleanup_type=recipe.cleanup_type,
+            zoom_enabled=recipe.zoom_enabled,
+            last_zoom_percentage=recipe.zoom_percent,
+            last_blur_strength=recipe.blur_strength,
             last_output_quality=self.output_quality_combo.currentText(),
-            last_output_resolution=self.output_resolution_combo.currentText(),
-            last_resize_mode=self.resize_mode_combo.currentText(),
-            last_custom_output_width=self.custom_output_width_spin.value(),
-            last_custom_output_height=self.custom_output_height_spin.value(),
+            output_standardization_enabled=recipe.output_standardization_enabled,
+            last_output_resolution=recipe.output_resolution,
+            last_resize_mode=recipe.resize_mode,
+            last_custom_output_width=recipe.custom_output_width,
+            last_custom_output_height=recipe.custom_output_height,
         )
 
     def load_app_settings(self) -> None:
@@ -1085,11 +1225,12 @@ class MainWindow(QMainWindow):
 
         self._is_restoring_app_settings = True
         try:
-            area_cleanup_mode, apply_zoom = workflow_state_from_processing_mode(settings.last_processing_mode)
             self._is_syncing_workflow_controls = True
             try:
-                self.area_cleanup_combo.setCurrentText(area_cleanup_mode)
-                self.apply_zoom_checkbox.setChecked(apply_zoom)
+                self.area_cleanup_checkbox.setChecked(settings.area_cleanup_enabled)
+                self.area_cleanup_combo.setCurrentText(settings.cleanup_type)
+                self.apply_zoom_checkbox.setChecked(settings.zoom_enabled)
+                self.output_size_checkbox.setChecked(settings.output_standardization_enabled)
             finally:
                 self._is_syncing_workflow_controls = False
 
@@ -1097,7 +1238,10 @@ class MainWindow(QMainWindow):
                 self.encoder_combo.setCurrentText(settings.last_encoder_selection)
             if settings.last_output_quality:
                 self.output_quality_combo.setCurrentText(settings.last_output_quality)
-            if settings.last_output_resolution:
+            if (
+                settings.last_output_resolution
+                and settings.last_output_resolution != OUTPUT_RESOLUTION_KEEP_ORIGINAL
+            ):
                 self.output_resolution_combo.setCurrentText(settings.last_output_resolution)
             if settings.last_resize_mode:
                 self.resize_mode_combo.setCurrentText(settings.last_resize_mode)
@@ -1111,7 +1255,9 @@ class MainWindow(QMainWindow):
         finally:
             self._is_restoring_app_settings = False
 
+        self.update_mode_controls()
         self.update_output_resolution_controls()
+        self.update_recipe_summary()
 
     def save_app_settings(self) -> None:
         """Persist the current settings to the writable app-data location."""
@@ -1125,14 +1271,16 @@ class MainWindow(QMainWindow):
 
     def apply_tooltips(self) -> None:
         """Add lightweight guidance to the most important controls."""
-        self.area_cleanup_combo.setToolTip("Choose how to handle the selected logo or watermark area.")
+        self.area_cleanup_checkbox.setToolTip("Turn area cleanup on when the selected rectangle should affect export.")
+        self.area_cleanup_combo.setToolTip("Choose whether the selected rectangle should be blurred or covered.")
         self.blur_slider.setToolTip("Controls how strongly the selected rectangle is blurred.")
         self.logo_button.setToolTip("Choose a PNG, JPG, JPEG, or WEBP file to cover the selected area.")
-        self.apply_zoom_checkbox.setToolTip("Enable zoom/crop mode for a separate zoom-only export.")
+        self.apply_zoom_checkbox.setToolTip("Enable zoom/crop as an extra step before final output sizing.")
         self.zoom_slider.setToolTip("Scales the video up, then center-crops back to the original size.")
+        self.output_size_checkbox.setToolTip("Standardize every export to the same output size.")
         self.encoder_combo.setToolTip("Auto uses NVIDIA NVENC when available and falls back to CPU when needed.")
         self.output_quality_combo.setToolTip("Choose a faster or higher-quality preset without manual bitrate tuning.")
-        self.output_resolution_combo.setToolTip("Standardize exports to a vertical reel resolution like 1080x1920.")
+        self.output_resolution_combo.setToolTip("Choose a target vertical reel resolution like 1080x1920.")
         self.resize_mode_combo.setToolTip("Fill & Crop is recommended for vertical reels. Fit with Padding preserves the whole frame.")
         self.custom_output_width_spin.setToolTip("Custom export width. Use positive even numbers only.")
         self.custom_output_height_spin.setToolTip("Custom export height. Use positive even numbers only.")
@@ -1165,33 +1313,29 @@ class MainWindow(QMainWindow):
 
     def validate_export_request(self, videos: List[VideoInfo]) -> Optional[str]:
         """Return a user-facing validation error for export, or None when ready."""
-        mode = self.get_current_processing_mode()
-        if mode is None:
-            return "Choose an Area Cleanup option or enable 'Apply zoom/crop' before exporting."
-
-        return validate_export_request(
-            mode=mode,
+        return validate_recipe_export_request(
+            recipe=self.build_recipe(),
             videos=videos,
             output_directory=self.output_directory,
-            selection=self.current_selection,
-            overlay_image_path=self.logo_image_path,
-            output_resolution=self.output_resolution_combo.currentText(),
-            custom_output_width=self.custom_output_width_spin.value(),
-            custom_output_height=self.custom_output_height_spin.value(),
         )
 
-    def build_export_settings(self, mode: str) -> ExportSettings:
+    def build_export_settings(self) -> ExportSettings:
         """Return an export settings snapshot for the active workflow."""
-        output_standardization = build_output_standardization(
-            self.output_resolution_combo.currentText(),
-            self.resize_mode_combo.currentText(),
-            custom_width=self.custom_output_width_spin.value(),
-            custom_height=self.custom_output_height_spin.value(),
-        )
+        recipe = self.build_recipe()
+        output_standardization = None
+        if recipe.output_standardization_enabled:
+            output_standardization = build_output_standardization(
+                recipe.output_resolution,
+                recipe.resize_mode,
+                custom_width=recipe.custom_output_width,
+                custom_height=recipe.custom_output_height,
+            )
         return ExportSettings(
-            processing_mode=mode,
-            blur_strength=self.blur_slider.value(),
-            zoom_percent=self.zoom_slider.value(),
+            area_cleanup_enabled=recipe.area_cleanup_enabled,
+            cleanup_type=recipe.cleanup_type,
+            blur_strength=recipe.blur_strength,
+            zoom_enabled=recipe.zoom_enabled,
+            zoom_percent=recipe.zoom_percent,
             output_quality=self.output_quality_combo.currentText(),
             output_standardization=output_standardization,
             selection=self.current_selection,
@@ -1239,22 +1383,20 @@ class MainWindow(QMainWindow):
         if self.output_directory is None or self.export_worker is not None:
             return
 
-        mode = self.get_current_processing_mode()
-        if mode is None:
-            return
-
         self._active_export_scope_label = export_scope_label
-        export_settings = self.build_export_settings(mode)
+        export_settings = self.build_export_settings()
         ffmpeg_path = self.ffmpeg_processor.resolved_ffmpeg_path or self.ffmpeg_processor.ffmpeg_path
-        progress_label = processing_mode_progress_label(mode)
 
         self.video_queue.set_status_for_videos([video.file_path for video in videos], "Queued")
         self.export_button.setEnabled(False)
         self.test_export_button.setEnabled(False)
         self.progress_bar.setRange(0, len(videos))
         self.progress_bar.setValue(0)
+        recipe_status = self.recipe_summary_label.text()
+        if recipe_status.startswith("Will apply: "):
+            recipe_status = recipe_status.removeprefix("Will apply: ")
         self.status_label.setText(
-            f"Starting {export_scope_label} {progress_label.lower()} export with {ffmpeg_path}..."
+            f"Starting {export_scope_label} export: {recipe_status} with {ffmpeg_path}..."
         )
 
         self.export_thread = QThread(self)
@@ -1353,6 +1495,23 @@ class MainWindow(QMainWindow):
         self.release_preview_capture()
         self.save_app_settings()
         super().closeEvent(event)
+
+    @staticmethod
+    def _set_status_badge(label: QLabel, text: str) -> None:
+        """Apply a simple color-coded badge style."""
+        styles = {
+            "Ready": ("#163526", "#7ef0af", "#28503a"),
+            "Missing area": ("#3d2616", "#ffc790", "#6b4627"),
+            "Missing logo": ("#3d2616", "#ffc790", "#6b4627"),
+            "Off": ("#2d3238", "#b7c2cd", "#454d56"),
+        }
+        background, foreground, border = styles.get(text, ("#2d3238", "#b7c2cd", "#454d56"))
+        label.setText(text)
+        label.setStyleSheet(
+            "QLabel { "
+            f"background-color: {background}; color: {foreground}; border: 1px solid {border}; "
+            "border-radius: 12px; padding: 4px 10px; font-size: 12px; font-weight: 600; }"
+        )
 
     @staticmethod
     def _panel_style() -> str:
