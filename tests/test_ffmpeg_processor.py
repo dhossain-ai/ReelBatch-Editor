@@ -12,6 +12,8 @@ from core.ffmpeg_processor import (
     ENCODER_OPTION_NVIDIA,
     EncoderAvailability,
     FFmpegProcessor,
+    OUTPUT_SUFFIX_BRANDED,
+    OUTPUT_SUFFIX_ZOOMED,
     build_output_path,
 )
 from core.selection import NormalizedSelection, normalized_selection_to_pixel_rect
@@ -90,6 +92,54 @@ class FFmpegProcessorTests(unittest.TestCase):
             output_path = build_output_path(output_dir, "video.mp4")
 
             self.assertEqual(output_path.name, "video_blurred_2.mp4")
+
+    def test_output_filename_uses_requested_mode_suffix(self):
+        with TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+
+            branded_output = build_output_path(
+                output_dir,
+                "video.mp4",
+                suffix=OUTPUT_SUFFIX_BRANDED,
+            )
+            zoomed_output = build_output_path(
+                output_dir,
+                "video.mp4",
+                suffix=OUTPUT_SUFFIX_ZOOMED,
+            )
+
+            self.assertEqual(branded_output.name, "video_branded.mp4")
+            self.assertEqual(zoomed_output.name, "video_zoomed.mp4")
+
+    def test_build_logo_overlay_command_contains_scaled_overlay_filter(self):
+        processor = FFmpegProcessor(ffmpeg_path="ffmpeg")
+        selection = NormalizedSelection(
+            x_percent=83.333333,
+            y_percent=2.083333,
+            width_percent=12.962963,
+            height_percent=6.25,
+        )
+
+        command = processor.build_logo_overlay_command(
+            input_path=Path("input.mp4"),
+            output_path=Path("output.mp4"),
+            overlay_image_path=Path("brand logo.png"),
+            selection=selection,
+            video_width=1080,
+            video_height=1920,
+            encoder=ENCODER_LIBX264,
+        )
+
+        filter_index = command.index("-filter_complex") + 1
+        self.assertEqual(
+            command[filter_index],
+            "[1:v]scale=w=140:h=120:force_original_aspect_ratio=decrease,"
+            "pad=140:120:(ow-iw)/2:(oh-ih)/2:color=0x00000000[logo];"
+            "[0:v][logo]overlay=x=900:y=40:format=auto[outv]",
+        )
+        self.assertEqual(command[5], "brand logo.png")
+        self.assertIn("0:a?", command)
+        self.assertIn(ENCODER_LIBX264, command)
 
     def test_resolve_encoder_plan_auto_prefers_nvenc_and_falls_back_to_cpu(self):
         processor = FFmpegProcessor()
