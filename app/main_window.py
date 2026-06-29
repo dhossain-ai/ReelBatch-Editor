@@ -4,16 +4,21 @@ Main Window for ReelBatch Editor
 from __future__ import annotations
 from pathlib import Path
 from typing import List, Optional
-from PySide6.QtCore import Qt, QThread
+from PySide6.QtCore import Qt, QThread, QUrl
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                                QLabel, QComboBox, QSlider, QPushButton, 
                                QProgressBar, QFileDialog, QMessageBox, QFrame,
                                QGridLayout, QInputDialog)
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QDesktopServices
 from app.preview_canvas import PreviewCanvas
 from app.video_queue import VideoQueue
 from core.app_settings import AppSettings, AppSettingsStore
-from core.export_worker import BatchExportSummary, ExportSettings, ExportWorker
+from core.export_worker import (
+    BatchExportSummary,
+    ExportSettings,
+    ExportWorker,
+    format_export_summary,
+)
 from core.ffmpeg_processor import (
     ENCODER_OPTION_AUTO,
     ENCODER_OPTION_CPU,
@@ -895,46 +900,35 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(completed)
 
     def on_export_file_finished(self, result) -> None:
-        """Log per-file FFmpeg output for debugging and note fallbacks."""
-        print(f"Export result for {result.input_path.name}: success={result.success}, encoder={result.encoder_used}")
-        if result.log_text:
-            print(result.log_text)
-
+        """Update lightweight status text when a file finishes exporting."""
         if result.success and result.fallback_used:
             self.status_label.setText(f"CPU fallback used for {result.input_path.name}")
 
     def on_export_finished(self, summary: BatchExportSummary) -> None:
         """Show a readable export summary when the batch completes."""
         self.export_button.setEnabled(True)
+        message = format_export_summary(summary)
 
-        summary_lines = [
-            f"Exported successfully: {summary.success_count}",
-            f"Failed: {summary.failure_count}",
-            f"Output folder: {summary.output_directory}",
-        ]
-        if summary.fallback_count:
-            summary_lines.append(f"CPU fallback used: {summary.fallback_count}")
-        if summary.successes:
-            summary_lines.append("")
-            summary_lines.append("Successful files:")
-            for file_name, output_path in summary.successes[:5]:
-                summary_lines.append(f"- {file_name} -> {Path(output_path).name}")
-            if len(summary.successes) > 5:
-                summary_lines.append(f"... and {len(summary.successes) - 5} more")
-        if summary.failures:
-            summary_lines.append("")
-            summary_lines.append("Failed files:")
-            for file_name, error_message in summary.failures[:5]:
-                summary_lines.append(f"- {file_name}: {error_message}")
-            if len(summary.failures) > 5:
-                summary_lines.append(f"... and {len(summary.failures) - 5} more")
+        dialog = QMessageBox(self)
+        dialog.setIcon(
+            QMessageBox.Warning if summary.failure_count else QMessageBox.Information
+        )
+        dialog.setWindowTitle(
+            "Export Completed With Errors" if summary.failure_count else "Export Complete"
+        )
+        dialog.setText(message)
+        open_folder_button = None
+        if Path(summary.output_directory).exists():
+            open_folder_button = dialog.addButton("Open Output Folder", QMessageBox.ActionRole)
+        dialog.addButton(QMessageBox.Ok)
+        dialog.exec()
 
-        message = "\n".join(summary_lines)
+        if dialog.clickedButton() == open_folder_button:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(summary.output_directory))
+
         if summary.failure_count:
-            QMessageBox.warning(self, "Export Completed With Errors", message)
             self.status_label.setText("Export finished with errors")
         else:
-            QMessageBox.information(self, "Export Complete", message)
             self.status_label.setText("Export complete")
 
     def on_export_thread_finished(self) -> None:

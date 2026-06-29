@@ -9,6 +9,7 @@ from typing import Optional, Sequence
 
 from PySide6.QtCore import QObject, Signal
 
+from core.export_logging import ExportLogWriter, extract_ffmpeg_error_snippet
 from core.ffmpeg_processor import EncoderPlan, ExportResult, FFmpegProcessor
 from core.processing_modes import (
     PROCESSING_MODE_BLUR,
@@ -41,8 +42,31 @@ class BatchExportSummary:
     failure_count: int
     fallback_count: int
     output_directory: str
+    log_file_path: str
     successes: tuple[tuple[str, str], ...]
     failures: tuple[tuple[str, str], ...]
+
+
+def format_export_summary(summary: BatchExportSummary) -> str:
+    """Create a readable summary for the export completion dialog."""
+    summary_lines = [
+        f"Total files: {summary.total_videos}",
+        f"Successful files: {summary.success_count}",
+        f"Failed files: {summary.failure_count}",
+        f"Output folder: {summary.output_directory}",
+    ]
+    if summary.fallback_count:
+        summary_lines.append(f"CPU fallback used: {summary.fallback_count}")
+    if summary.log_file_path:
+        summary_lines.append(f"Log file: {summary.log_file_path}")
+    if summary.failures:
+        summary_lines.append("")
+        summary_lines.append("Failed files:")
+        for file_name, error_message in summary.failures[:5]:
+            summary_lines.append(f"- {file_name}: {error_message}")
+        if len(summary.failures) > 5:
+            summary_lines.append(f"... and {len(summary.failures) - 5} more")
+    return "\n".join(summary_lines)
 
 
 class ExportWorker(QObject):
@@ -60,6 +84,7 @@ class ExportWorker(QObject):
         settings: ExportSettings,
         encoder_plan: EncoderPlan,
         ffmpeg_path: str = "ffmpeg",
+        log_file_path: Optional[Path | str] = None,
     ) -> None:
         super().__init__()
         self._videos = list(videos)
@@ -67,6 +92,9 @@ class ExportWorker(QObject):
         self._settings = settings
         self._encoder_plan = encoder_plan
         self._processor = FFmpegProcessor(ffmpeg_path=ffmpeg_path)
+        self._log_writer = ExportLogWriter.create(
+            Path(log_file_path) if log_file_path is not None else None
+        )
 
     def run(self) -> None:
         """Export all queued videos and emit a final batch summary."""
@@ -75,6 +103,15 @@ class ExportWorker(QObject):
         successes: list[tuple[str, str]] = []
         failures: list[tuple[str, str]] = []
         total = len(self._videos)
+        self._log_writer.write_line(
+            "Export batch started"
+            f" | mode={self._settings.processing_mode}"
+            f" | encoder_request={self._encoder_plan.requested_option}"
+            f" | primary_encoder={self._encoder_plan.primary_encoder}"
+            f" | output_quality={self._settings.output_quality}"
+            f" | output_directory={self._output_directory}"
+            f" | total_files={total}"
+        )
 
         self.progress_changed.emit(0, total)
 
@@ -87,15 +124,22 @@ class ExportWorker(QObject):
                 failure_count=total,
                 fallback_count=0,
                 output_directory=str(self._output_directory),
+                log_file_path=str(self._log_writer.log_file_path),
                 successes=(),
                 failures=(("Batch export", str(exc)),),
             )
+            self._log_writer.write_line(f"Export batch aborted before processing: {exc}")
             self.finished.emit(summary)
             return
 
         for index, video_info in enumerate(self._videos, start=1):
             progress_label = processing_mode_progress_label(self._settings.processing_mode)
             self.status_changed.emit(f"{progress_label} {index}/{total}: {video_info.file_name}")
+            self._log_writer.write_line(
+                f"Processing file {index}/{total}"
+                f" | input={video_info.file_path}"
+                f" | mode={self._settings.processing_mode}"
+            )
             try:
                 result = self._export_video(video_info)
             except Exception as exc:
@@ -109,6 +153,7 @@ class ExportWorker(QObject):
                     error_message=str(exc),
                 )
             self.file_finished.emit(result)
+            self._log_result(video_info, result)
 
             if result.success:
                 success_count += 1
@@ -132,8 +177,15 @@ class ExportWorker(QObject):
             failure_count=len(failures),
             fallback_count=fallback_count,
             output_directory=str(self._output_directory),
+            log_file_path=str(self._log_writer.log_file_path),
             successes=tuple(successes),
             failures=tuple(failures),
+        )
+        self._log_writer.write_line(
+            "Export batch finished"
+            f" | success_count={summary.success_count}"
+            f" | failure_count={summary.failure_count}"
+            f" | fallback_count={summary.fallback_count}"
         )
         self.finished.emit(summary)
 
@@ -175,3 +227,28 @@ class ExportWorker(QObject):
             )
 
         raise ValueError(f"Unsupported processing mode: {self._settings.processing_mode}")
+
+    def _log_result(self, video_info: VideoInfo, result: ExportResult) -> None:
+        """Write a compact per-file log entry for debugging."""
+        message = (
+            f"Result | input={video_info.file_path}"
+            f" | output={result.output_path}"
+            f" | success={result.success}"
+            f" | encoder_used={result.encoder_used}"
+        )
+        if result.fallback_used:
+            message += " | fallback_used=True"
+        if result.error_message:
+            message += f" | error={result.error_message}"
+        self._log_writer.write_line(message)
+
+        if result.fallback_used:
+            self._log_writer.write_line(
+                f"Fallback event | file={video_info.file_path} | fallback_encoder={result.encoder_used}"
+            )
+
+        if not result.success:
+            self._log_writer.write_line(
+                "FFmpeg error snippet follows:\n"
+                f"{extract_ffmpeg_error_snippet(result.log_text)}"
+            )
