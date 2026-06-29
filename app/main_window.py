@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -124,13 +125,14 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(self.video_queue)
 
         center_panel = QFrame()
+        center_panel.setObjectName("panelCard")
         center_panel.setStyleSheet(self._panel_style())
         center_layout = QVBoxLayout(center_panel)
         center_layout.setContentsMargins(16, 16, 16, 16)
         center_layout.setSpacing(12)
 
         preview_title = QLabel("Preview")
-        preview_title.setStyleSheet("font-size: 18px; font-weight: bold; color: #ffffff;")
+        preview_title.setObjectName("panelTitle")
         center_layout.addWidget(preview_title)
 
         self.preview_canvas = PreviewCanvas()
@@ -159,96 +161,109 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(center_panel, stretch=1)
 
         right_panel = QFrame()
+        right_panel.setObjectName("settingsPanel")
         right_panel.setStyleSheet(self._panel_style())
-        right_panel.setMaximumWidth(360)
+        right_panel.setMinimumWidth(380)
+        right_panel.setMaximumWidth(430)
         right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(16, 16, 16, 16)
-        right_layout.setSpacing(12)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
+
+        self.settings_scroll_area = QScrollArea()
+        self.settings_scroll_area.setObjectName("settingsScrollArea")
+        self.settings_scroll_area.setWidgetResizable(True)
+        self.settings_scroll_area.setFrameShape(QFrame.NoFrame)
+        self.settings_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        settings_content = QWidget()
+        settings_content.setObjectName("settingsScrollContent")
+        settings_layout = QVBoxLayout(settings_content)
+        settings_layout.setContentsMargins(16, 16, 16, 16)
+        settings_layout.setSpacing(14)
 
         settings_title = QLabel("Creator Workflow")
-        settings_title.setStyleSheet("font-size: 18px; font-weight: bold; color: #ffffff;")
-        right_layout.addWidget(settings_title)
+        settings_title.setObjectName("panelTitle")
+        settings_layout.addWidget(settings_title)
 
         self.workflow_hint_label = QLabel()
+        self.workflow_hint_label.setObjectName("workflowHintLabel")
         self.workflow_hint_label.setWordWrap(True)
-        self.workflow_hint_label.setStyleSheet(
-            "background-color: #1f2b33; color: #d7eef9; border: 1px solid #2e5567; "
-            "border-radius: 8px; padding: 10px; font-size: 12px;"
-        )
-        right_layout.addWidget(self.workflow_hint_label)
+        self.workflow_hint_label.setMinimumHeight(72)
+        settings_layout.addWidget(self.workflow_hint_label)
 
         self.area_cleanup_section, area_layout = self._create_section(
             "Area Cleanup",
             "Choose how to handle the selected logo or watermark area.",
         )
-        area_layout.addWidget(QLabel("Area Cleanup:"))
+        area_layout.addWidget(self._create_field_label("Area Cleanup"))
         self.area_cleanup_combo = QComboBox()
         self.area_cleanup_combo.addItems(list(AREA_CLEANUP_OPTIONS))
         self.area_cleanup_combo.setStyleSheet(self._combo_style())
+        self._configure_panel_control(self.area_cleanup_combo, minimum_width=220)
         area_layout.addWidget(self.area_cleanup_combo)
 
-        self.area_cleanup_helper_label = QLabel(
+        self.area_cleanup_helper_label = self._create_helper_label(
             "Draw a rectangle on the preview to choose the logo/watermark area."
         )
-        self.area_cleanup_helper_label.setWordWrap(True)
-        self.area_cleanup_helper_label.setStyleSheet("color: #9fd7ff; font-size: 12px;")
+        self.area_cleanup_helper_label.setObjectName("accentHelperLabel")
         area_layout.addWidget(self.area_cleanup_helper_label)
 
-        self.mode_help_label = QLabel()
-        self.mode_help_label.setWordWrap(True)
-        self.mode_help_label.setStyleSheet("color: #9a9a9a; font-size: 12px;")
+        self.mode_help_label = self._create_helper_label()
         area_layout.addWidget(self.mode_help_label)
 
         self.blur_controls = QWidget()
+        self.blur_controls.setObjectName("modeControls")
         blur_layout = QVBoxLayout(self.blur_controls)
         blur_layout.setContentsMargins(0, 0, 0, 0)
-        blur_layout.setSpacing(6)
-        blur_layout.addWidget(QLabel("Blur Strength:"))
+        blur_layout.setSpacing(8)
+        blur_layout.addWidget(self._create_field_label("Blur Strength"))
         blur_row = QHBoxLayout()
+        blur_row.setSpacing(10)
         self.blur_slider = QSlider(Qt.Horizontal)
         self.blur_slider.setRange(1, 20)
         self.blur_slider.setValue(10)
         self.blur_slider.setStyleSheet(self._slider_style())
         blur_row.addWidget(self.blur_slider, stretch=1)
         self.blur_value_label = QLabel("10")
+        self.blur_value_label.setObjectName("valueBadge")
         self.blur_value_label.setMinimumWidth(28)
         self.blur_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.blur_value_label.setStyleSheet("color: #cfcfcf; font-size: 12px;")
         blur_row.addWidget(self.blur_value_label)
         blur_layout.addLayout(blur_row)
         area_layout.addWidget(self.blur_controls)
 
         self.logo_controls = QWidget()
+        self.logo_controls.setObjectName("modeControls")
         logo_layout = QVBoxLayout(self.logo_controls)
         logo_layout.setContentsMargins(0, 0, 0, 0)
-        logo_layout.setSpacing(6)
+        logo_layout.setSpacing(8)
         self.logo_button = QPushButton("Choose Logo/Image")
         self._set_secondary_button_style(self.logo_button)
+        self._configure_panel_control(self.logo_button, minimum_width=220)
         logo_layout.addWidget(self.logo_button)
-        self.logo_file_label = QLabel("No logo/image selected")
-        self.logo_file_label.setWordWrap(True)
-        self.logo_file_label.setStyleSheet("color: #9a9a9a; font-size: 12px;")
+        self.logo_file_label = self._create_helper_label("No logo/image selected")
         logo_layout.addWidget(self.logo_file_label)
         area_layout.addWidget(self.logo_controls)
 
         self.selection_section = QFrame()
+        self.selection_section.setObjectName("selectionCard")
         self.selection_section.setStyleSheet(self._subsection_style())
         selection_layout = QVBoxLayout(self.selection_section)
-        selection_layout.setContentsMargins(12, 12, 12, 12)
-        selection_layout.setSpacing(8)
+        selection_layout.setContentsMargins(14, 14, 14, 14)
+        selection_layout.setSpacing(10)
 
         selection_title = QLabel("Selected Area")
-        selection_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #ffffff;")
+        selection_title.setObjectName("sectionTitle")
         selection_layout.addWidget(selection_title)
 
-        self.selection_requirement_label = QLabel()
-        self.selection_requirement_label.setWordWrap(True)
-        self.selection_requirement_label.setStyleSheet("color: #9a9a9a; font-size: 12px;")
+        self.selection_requirement_label = self._create_helper_label()
         selection_layout.addWidget(self.selection_requirement_label)
 
         selection_grid = QGridLayout()
         selection_grid.setHorizontalSpacing(12)
-        selection_grid.setVerticalSpacing(8)
+        selection_grid.setVerticalSpacing(10)
+        selection_grid.setColumnStretch(0, 1)
+        selection_grid.setColumnStretch(1, 1)
         self.selection_value_labels: dict[str, QLabel] = {}
         selection_fields = [
             ("X %", "x_percent"),
@@ -257,107 +272,108 @@ class MainWindow(QMainWindow):
             ("Height %", "height_percent"),
         ]
         for row, (label_text, key) in enumerate(selection_fields):
-            field_label = QLabel(label_text)
-            field_label.setStyleSheet("color: #cfcfcf; font-size: 12px;")
+            field_label = self._create_field_label(label_text)
             selection_grid.addWidget(field_label, row, 0)
 
             value_label = QLabel("--")
+            value_label.setObjectName("valueBadge")
             value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            value_label.setStyleSheet(
-                "background-color: #1f1f1f; color: #4ea6ff; border: 1px solid #3a3a3a; "
-                "border-radius: 4px; padding: 6px 8px; font-size: 12px; font-weight: bold;"
-            )
+            value_label.setMinimumWidth(88)
             selection_grid.addWidget(value_label, row, 1)
             self.selection_value_labels[key] = value_label
         selection_layout.addLayout(selection_grid)
 
         self.clear_selection_button = QPushButton("Clear Selection")
         self._set_secondary_button_style(self.clear_selection_button)
+        self._configure_panel_control(self.clear_selection_button)
         selection_layout.addWidget(self.clear_selection_button)
         area_layout.addWidget(self.selection_section)
 
-        right_layout.addWidget(self.area_cleanup_section)
+        settings_layout.addWidget(self.area_cleanup_section)
 
         self.transform_section, transform_layout = self._create_section(
             "Transform",
             "Zoom/crop is available as its own export mode for this phase.",
         )
         self.apply_zoom_checkbox = QCheckBox("Apply zoom/crop")
-        self.apply_zoom_checkbox.setStyleSheet("color: #e0e0e0; font-size: 13px;")
         transform_layout.addWidget(self.apply_zoom_checkbox)
 
-        self.transform_help_label = QLabel()
-        self.transform_help_label.setWordWrap(True)
-        self.transform_help_label.setStyleSheet("color: #9a9a9a; font-size: 12px;")
+        self.transform_help_label = self._create_helper_label()
         transform_layout.addWidget(self.transform_help_label)
 
-        transform_layout.addWidget(QLabel("Zoom Percentage:"))
+        transform_layout.addWidget(self._create_field_label("Zoom Percentage"))
         zoom_row = QHBoxLayout()
+        zoom_row.setSpacing(10)
         self.zoom_slider = QSlider(Qt.Horizontal)
         self.zoom_slider.setRange(100, 150)
         self.zoom_slider.setValue(110)
         self.zoom_slider.setStyleSheet(self._slider_style())
         zoom_row.addWidget(self.zoom_slider, stretch=1)
         self.zoom_value_label = QLabel("110%")
+        self.zoom_value_label.setObjectName("valueBadge")
         self.zoom_value_label.setMinimumWidth(44)
         self.zoom_value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.zoom_value_label.setStyleSheet("color: #cfcfcf; font-size: 12px;")
         zoom_row.addWidget(self.zoom_value_label)
         transform_layout.addLayout(zoom_row)
-        right_layout.addWidget(self.transform_section)
+        settings_layout.addWidget(self.transform_section)
 
         self.output_section, output_layout = self._create_section(
             "Output",
             "Choose where files go and how they should be encoded.",
         )
-        output_layout.addWidget(QLabel("Output Folder:"))
+        output_layout.addWidget(self._create_field_label("Output Folder"))
         self.output_button = QPushButton("Choose Output Folder")
         self._set_secondary_button_style(self.output_button)
+        self._configure_panel_control(self.output_button, minimum_width=220)
         output_layout.addWidget(self.output_button)
-        self.output_folder_label = QLabel("No output folder selected")
-        self.output_folder_label.setWordWrap(True)
-        self.output_folder_label.setStyleSheet("color: #9a9a9a; font-size: 12px;")
+        self.output_folder_label = self._create_helper_label("No output folder selected")
         output_layout.addWidget(self.output_folder_label)
 
-        output_layout.addWidget(QLabel("Output Quality:"))
+        output_layout.addWidget(self._create_field_label("Output Quality"))
         self.output_quality_combo = QComboBox()
         self.output_quality_combo.addItems(list(OUTPUT_QUALITY_OPTIONS))
         self.output_quality_combo.setCurrentText(OUTPUT_QUALITY_BALANCED)
         self.output_quality_combo.setStyleSheet(self._combo_style())
+        self._configure_panel_control(self.output_quality_combo, minimum_width=220)
         output_layout.addWidget(self.output_quality_combo)
 
-        output_layout.addWidget(QLabel("Encoder:"))
+        output_layout.addWidget(self._create_field_label("Encoder"))
         self.encoder_combo = QComboBox()
         self.encoder_combo.addItems([ENCODER_OPTION_AUTO, ENCODER_OPTION_CPU, ENCODER_OPTION_NVIDIA])
         self.encoder_combo.setStyleSheet(self._combo_style())
+        self._configure_panel_control(self.encoder_combo, minimum_width=220)
         output_layout.addWidget(self.encoder_combo)
 
-        self.encoder_help_label = QLabel(
+        self.encoder_help_label = self._create_helper_label(
             "Auto uses NVIDIA GPU encoding when available and falls back to CPU if needed."
         )
-        self.encoder_help_label.setWordWrap(True)
-        self.encoder_help_label.setStyleSheet("color: #9a9a9a; font-size: 12px;")
         output_layout.addWidget(self.encoder_help_label)
-        right_layout.addWidget(self.output_section)
+        settings_layout.addWidget(self.output_section)
 
         self.presets_section, presets_layout = self._create_section(
             "Presets",
             "Save and load reusable creator workflow setups.",
         )
         preset_buttons = QHBoxLayout()
+        preset_buttons.setSpacing(10)
         self.save_preset_button = QPushButton("Save Preset")
         self._set_secondary_button_style(self.save_preset_button)
+        self._configure_panel_control(self.save_preset_button, minimum_width=140)
         preset_buttons.addWidget(self.save_preset_button)
         self.load_preset_button = QPushButton("Load Preset")
         self._set_secondary_button_style(self.load_preset_button)
+        self._configure_panel_control(self.load_preset_button, minimum_width=140)
         preset_buttons.addWidget(self.load_preset_button)
         presets_layout.addLayout(preset_buttons)
-        right_layout.addWidget(self.presets_section)
+        settings_layout.addWidget(self.presets_section)
 
-        right_layout.addStretch()
+        settings_layout.addStretch(1)
+        self.settings_scroll_area.setWidget(settings_content)
+        right_layout.addWidget(self.settings_scroll_area)
         content_layout.addWidget(right_panel)
 
         bottom_panel = QFrame()
+        bottom_panel.setObjectName("panelCard")
         bottom_panel.setStyleSheet(self._panel_style())
         bottom_layout = QHBoxLayout(bottom_panel)
         bottom_layout.setContentsMargins(16, 12, 16, 12)
@@ -744,9 +760,12 @@ class MainWindow(QMainWindow):
         is_zoom_mode = current_mode == PROCESSING_MODE_ZOOM
 
         self.blur_controls.setVisible(is_blur_mode)
+        self.blur_controls.setEnabled(is_blur_mode)
         self.logo_controls.setVisible(is_logo_mode)
-        self.zoom_slider.setEnabled(self.apply_zoom_checkbox.isChecked())
-        self.zoom_value_label.setEnabled(self.apply_zoom_checkbox.isChecked())
+        self.logo_controls.setEnabled(is_logo_mode)
+        zoom_enabled = self.apply_zoom_checkbox.isChecked()
+        self.zoom_slider.setEnabled(zoom_enabled)
+        self.zoom_value_label.setEnabled(zoom_enabled)
 
         if is_zoom_mode:
             self.mode_help_label.setText(processing_mode_status_text(PROCESSING_MODE_ZOOM))
@@ -1197,20 +1216,23 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _panel_style() -> str:
-        return "QFrame { background-color: #252526; border-radius: 8px; }"
+        return (
+            "QFrame { background-color: #252526; border: 1px solid #30363d; border-radius: 10px; }"
+        )
 
     @staticmethod
     def _subsection_style() -> str:
         return (
-            "QFrame { background-color: #2a2a2b; border: 1px solid #3a3a3a; "
-            "border-radius: 8px; }"
+            "QFrame { background-color: #232a31; border: 1px solid #31485c; "
+            "border-radius: 10px; }"
         )
 
     @staticmethod
     def _combo_style() -> str:
         return (
             "QComboBox { background-color: #3a3a3a; color: #e0e0e0; border: 1px solid #4a4a4a; "
-            "border-radius: 4px; padding: 6px; } "
+            "border-radius: 4px; padding: 6px 10px; min-height: 36px; } "
+            "QComboBox:disabled { background-color: #2b2b2b; color: #97a0ac; border: 1px solid #3c3c3c; } "
             "QComboBox::drop-down { border: none; } "
             "QComboBox::down-arrow { image: none; border-left: 5px solid transparent; "
             "border-right: 5px solid transparent; border-top: 5px solid #e0e0e0; }"
@@ -1229,7 +1251,7 @@ class MainWindow(QMainWindow):
     def _set_secondary_button_style(button: QPushButton) -> None:
         button.setStyleSheet(
             "QPushButton { background-color: #3a3a3a; color: #e0e0e0; border: none; "
-            "border-radius: 6px; padding: 10px; font-size: 13px; } "
+            "border-radius: 6px; padding: 10px 12px; font-size: 13px; min-height: 36px; } "
             "QPushButton:hover { background-color: #4a4a4a; } "
             "QPushButton:pressed { background-color: #2a2a2a; } "
             "QPushButton:disabled { background-color: #303030; color: #808080; }"
@@ -1238,18 +1260,38 @@ class MainWindow(QMainWindow):
     def _create_section(self, title: str, description: str) -> tuple[QFrame, QVBoxLayout]:
         """Create a framed right-panel section with consistent styling."""
         frame = QFrame()
+        frame.setObjectName("settingsSection")
         frame.setStyleSheet(self._subsection_style())
         layout = QVBoxLayout(frame)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
 
         title_label = QLabel(title)
-        title_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #ffffff;")
+        title_label.setObjectName("sectionTitle")
         layout.addWidget(title_label)
 
-        description_label = QLabel(description)
-        description_label.setWordWrap(True)
-        description_label.setStyleSheet("color: #9a9a9a; font-size: 12px;")
+        description_label = self._create_helper_label(description)
+        description_label.setObjectName("sectionDescription")
         layout.addWidget(description_label)
 
         return frame, layout
+
+    @staticmethod
+    def _create_field_label(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName("fieldLabel")
+        label.setWordWrap(True)
+        return label
+
+    @staticmethod
+    def _create_helper_label(text: str = "") -> QLabel:
+        label = QLabel(text)
+        label.setObjectName("helperLabel")
+        label.setWordWrap(True)
+        return label
+
+    @staticmethod
+    def _configure_panel_control(widget: QWidget, minimum_width: int = 0) -> None:
+        widget.setMinimumHeight(36)
+        if minimum_width > 0:
+            widget.setMinimumWidth(minimum_width)
