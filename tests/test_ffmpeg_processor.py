@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
+from subprocess import CompletedProcess
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
@@ -11,6 +12,7 @@ from core.ffmpeg_processor import (
     ENCODER_OPTION_AUTO,
     ENCODER_OPTION_NVIDIA,
     EncoderAvailability,
+    EncoderPlan,
     FFmpegProcessor,
     OUTPUT_QUALITY_BALANCED,
     OUTPUT_QUALITY_FAST,
@@ -28,6 +30,7 @@ from core.output_resolution import (
     build_output_standardization,
 )
 from core.selection import NormalizedSelection, normalized_selection_to_pixel_rect
+from core.video_probe import VideoInfo
 
 
 class FFmpegProcessorTests(unittest.TestCase):
@@ -61,6 +64,55 @@ class FFmpegProcessorTests(unittest.TestCase):
         self.assertEqual(pixel_rect.width, 2)
         self.assertEqual(pixel_rect.height, 2)
 
+    def test_normalized_selection_to_pixel_rect_preserves_bottom_right_selection_on_720x1280(self):
+        selection = NormalizedSelection(
+            x_percent=95.0,
+            y_percent=95.0,
+            width_percent=5.0,
+            height_percent=5.0,
+        )
+
+        pixel_rect = normalized_selection_to_pixel_rect(selection, 720, 1280)
+
+        self.assertEqual(pixel_rect.x, 684)
+        self.assertEqual(pixel_rect.y, 1216)
+        self.assertEqual(pixel_rect.width, 36)
+        self.assertEqual(pixel_rect.height, 64)
+        self.assertEqual(pixel_rect.x + pixel_rect.width, 720)
+        self.assertEqual(pixel_rect.y + pixel_rect.height, 1280)
+
+    def test_normalized_selection_to_pixel_rect_preserves_bottom_right_selection_on_1080x1920(self):
+        selection = NormalizedSelection(
+            x_percent=95.0,
+            y_percent=95.0,
+            width_percent=5.0,
+            height_percent=5.0,
+        )
+
+        pixel_rect = normalized_selection_to_pixel_rect(selection, 1080, 1920)
+
+        self.assertEqual(pixel_rect.x, 1026)
+        self.assertEqual(pixel_rect.y, 1824)
+        self.assertEqual(pixel_rect.width, 54)
+        self.assertEqual(pixel_rect.height, 96)
+        self.assertEqual(pixel_rect.x + pixel_rect.width, 1080)
+        self.assertEqual(pixel_rect.y + pixel_rect.height, 1920)
+
+    def test_normalized_selection_to_pixel_rect_shrinks_odd_edge_dimensions_instead_of_expanding(self):
+        selection = NormalizedSelection(
+            x_percent=95.7,
+            y_percent=94.9,
+            width_percent=4.3,
+            height_percent=5.1,
+        )
+
+        pixel_rect = normalized_selection_to_pixel_rect(selection, 720, 1280)
+
+        self.assertEqual(pixel_rect.width % 2, 0)
+        self.assertEqual(pixel_rect.height % 2, 0)
+        self.assertLessEqual(pixel_rect.x + pixel_rect.width, 720)
+        self.assertLessEqual(pixel_rect.y + pixel_rect.height, 1280)
+
     def test_build_blur_command_contains_expected_filter_and_audio_mapping(self):
         processor = FFmpegProcessor(ffmpeg_path="ffmpeg")
         selection = NormalizedSelection(
@@ -84,13 +136,96 @@ class FFmpegProcessorTests(unittest.TestCase):
         self.assertEqual(
             command[filter_index],
             "[0:v]split[base][tmp];"
-            "[tmp]crop=w=140:h=120:x=900:y=40,boxblur=12:1[blurred];"
+            "[tmp]crop=w=140:h=120:x=900:y=40,"
+            "boxblur=luma_radius=12:luma_power=1:chroma_radius=12:chroma_power=1[blurred];"
             "[base][blurred]overlay=x=900:y=40[outv]",
         )
         self.assertIn("[outv]", command)
         self.assertIn("0:a?", command)
         self.assertIn(ENCODER_LIBX264, command)
         self.assertEqual(command[-1], "output.mp4")
+
+    def test_build_blur_command_keeps_bottom_right_selection_inside_720x1280_frame(self):
+        processor = FFmpegProcessor(ffmpeg_path="ffmpeg")
+        selection = NormalizedSelection(
+            x_percent=95.0,
+            y_percent=95.0,
+            width_percent=5.0,
+            height_percent=5.0,
+        )
+
+        command = processor.build_blur_command(
+            input_path=Path("input.mp4"),
+            output_path=Path("output.mp4"),
+            selection=selection,
+            video_width=720,
+            video_height=1280,
+            blur_strength=12,
+            encoder=ENCODER_LIBX264,
+        )
+
+        filter_index = command.index("-filter_complex") + 1
+        self.assertEqual(
+            command[filter_index],
+            "[0:v]split[base][tmp];"
+            "[tmp]crop=w=36:h=64:x=684:y=1216,"
+            "boxblur=luma_radius=12:luma_power=1:chroma_radius=8:chroma_power=1[blurred];"
+            "[base][blurred]overlay=x=684:y=1216[outv]",
+        )
+
+    def test_build_blur_command_keeps_bottom_right_selection_inside_1080x1920_frame(self):
+        processor = FFmpegProcessor(ffmpeg_path="ffmpeg")
+        selection = NormalizedSelection(
+            x_percent=95.0,
+            y_percent=95.0,
+            width_percent=5.0,
+            height_percent=5.0,
+        )
+
+        command = processor.build_blur_command(
+            input_path=Path("input.mp4"),
+            output_path=Path("output.mp4"),
+            selection=selection,
+            video_width=1080,
+            video_height=1920,
+            blur_strength=12,
+            encoder=ENCODER_LIBX264,
+        )
+
+        filter_index = command.index("-filter_complex") + 1
+        self.assertEqual(
+            command[filter_index],
+            "[0:v]split[base][tmp];"
+            "[tmp]crop=w=54:h=96:x=1026:y=1824,"
+            "boxblur=luma_radius=12:luma_power=1:chroma_radius=12:chroma_power=1[blurred];"
+            "[base][blurred]overlay=x=1026:y=1824[outv]",
+        )
+
+    def test_build_blur_command_clamps_boxblur_radius_for_tiny_bottom_right_crop(self):
+        processor = FFmpegProcessor(ffmpeg_path="ffmpeg")
+        selection = NormalizedSelection(
+            x_percent=92.7777778,
+            y_percent=97.3958333,
+            width_percent=6.2962963,
+            height_percent=2.0833333,
+        )
+
+        command = processor.build_blur_command(
+            input_path=Path("input.mp4"),
+            output_path=Path("output.mp4"),
+            selection=selection,
+            video_width=1080,
+            video_height=1920,
+            blur_strength=20,
+            encoder=ENCODER_LIBX264,
+        )
+
+        filter_index = command.index("-filter_complex") + 1
+        self.assertIn("crop=w=68:h=40:x=1002:y=1870", command[filter_index])
+        self.assertIn(
+            "boxblur=luma_radius=19:luma_power=1:chroma_radius=9:chroma_power=1",
+            command[filter_index],
+        )
 
     def test_build_blur_command_appends_fill_crop_output_standardization(self):
         processor = FFmpegProcessor(ffmpeg_path="ffmpeg")
@@ -120,9 +255,10 @@ class FFmpegProcessorTests(unittest.TestCase):
         self.assertEqual(
             command[filter_index],
             "[0:v]split[base][tmp];"
-            "[tmp]crop=w=94:h=80:x=600:y=27,boxblur=12:1[blurred];"
-            "[base][blurred]overlay=x=600:y=27[preoutv];"
-            "[preoutv]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,"
+            "[tmp]crop=w=92:h=80:x=600:y=26,"
+            "boxblur=luma_radius=12:luma_power=1:chroma_radius=12:chroma_power=1[blurred];"
+            "[base][blurred]overlay=x=600:y=26[cleaned];"
+            "[cleaned]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,"
             "crop=1080:1920[outv]",
         )
 
@@ -155,9 +291,10 @@ class FFmpegProcessorTests(unittest.TestCase):
         self.assertEqual(
             command[filter_index],
             "[0:v]split[base][tmp];"
-            "[tmp]crop=w=94:h=80:x=600:y=27,boxblur=12:1[blurred];"
-            "[base][blurred]overlay=x=600:y=27[preoutv];"
-            "[preoutv]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,"
+            "[tmp]crop=w=92:h=80:x=600:y=26,"
+            "boxblur=luma_radius=12:luma_power=1:chroma_radius=12:chroma_power=1[blurred];"
+            "[base][blurred]overlay=x=600:y=26[cleaned];"
+            "[cleaned]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,"
             "crop=1080:1920[outv]",
         )
 
@@ -284,8 +421,8 @@ class FFmpegProcessorTests(unittest.TestCase):
             command[filter_index],
             "[1:v]scale=w=140:h=120:force_original_aspect_ratio=decrease,"
             "pad=140:120:(ow-iw)/2:(oh-ih)/2:color=0x00000000[logo];"
-            "[0:v][logo]overlay=x=900:y=40:format=auto[preoutv];"
-            "[preoutv]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,"
+            "[0:v][logo]overlay=x=900:y=40:format=auto[cleaned];"
+            "[cleaned]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,"
             "crop=1080:1920[outv]",
         )
 
@@ -330,8 +467,8 @@ class FFmpegProcessorTests(unittest.TestCase):
         filter_index = command.index("-filter_complex") + 1
         self.assertEqual(
             command[filter_index],
-            "[0:v]scale=720:1280,crop=720:1280:(iw-720)/2:(ih-1280)/2[preoutv];"
-            "[preoutv]scale=1080:1920:force_original_aspect_ratio=decrease:flags=lanczos,"
+            "[0:v]scale=720:1280,crop=720:1280:(iw-720)/2:(ih-1280)/2[zoomed];"
+            "[zoomed]scale=1080:1920:force_original_aspect_ratio=decrease:flags=lanczos,"
             "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black[outv]",
         )
 
@@ -355,8 +492,8 @@ class FFmpegProcessorTests(unittest.TestCase):
         filter_index = command.index("-filter_complex") + 1
         self.assertEqual(
             command[filter_index],
-            "[0:v]scale=778:1382,crop=720:1280:(iw-720)/2:(ih-1280)/2[preoutv];"
-            "[preoutv]scale=1080:1920:force_original_aspect_ratio=decrease:flags=lanczos,"
+            "[0:v]scale=778:1382,crop=720:1280:(iw-720)/2:(ih-1280)/2[zoomed];"
+            "[zoomed]scale=1080:1920:force_original_aspect_ratio=decrease:flags=lanczos,"
             "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black[outv]",
         )
 
@@ -382,6 +519,128 @@ class FFmpegProcessorTests(unittest.TestCase):
 
         filter_index = command.index("-filter_complex") + 1
         self.assertNotIn("force_original_aspect_ratio", command[filter_index])
+        self.assertNotIn("scale=", command[filter_index])
+        self.assertNotIn("pad=", command[filter_index])
+        self.assertEqual(command[filter_index].count("crop="), 1)
+
+    def test_auto_fallback_cpu_command_drops_nvenc_only_options(self):
+        processor = FFmpegProcessor(ffmpeg_path="ffmpeg")
+        selection = NormalizedSelection(
+            x_percent=92.7777778,
+            y_percent=97.3958333,
+            width_percent=6.2962963,
+            height_percent=2.0833333,
+        )
+        encoder_plan = EncoderPlan(
+            primary_encoder=ENCODER_H264_NVENC,
+            fallback_encoder=ENCODER_LIBX264,
+            requested_option=ENCODER_OPTION_AUTO,
+        )
+        video_info = VideoInfo(
+            file_path="C:/videos/sample.mp4",
+            file_name="sample.mp4",
+            width=1080,
+            height=1920,
+            fps=30.0,
+            frame_count=300,
+            duration_seconds=10.0,
+        )
+
+        run_results = [
+            CompletedProcess(args=["ffmpeg"], returncode=1, stdout="", stderr="primary failed"),
+            CompletedProcess(args=["ffmpeg"], returncode=0, stdout="fallback ok", stderr=""),
+        ]
+
+        with TemporaryDirectory() as temp_dir, patch.object(
+            processor,
+            "run_command",
+            side_effect=run_results,
+        ):
+            result = processor.export_recipe_video(
+                video_info=video_info,
+                output_directory=Path(temp_dir),
+                encoder_plan=encoder_plan,
+                area_cleanup_type="Blur selected area",
+                selection=selection,
+                blur_strength=20,
+                output_quality=OUTPUT_QUALITY_BALANCED,
+            )
+
+        self.assertTrue(result.fallback_used)
+        self.assertIn("Attempt: primary", result.log_text)
+        self.assertIn("Encoder selected: h264_nvenc", result.log_text)
+        self.assertIn("Attempt: fallback", result.log_text)
+        self.assertIn("Encoder selected: libx264", result.log_text)
+        fallback_log = result.log_text.split("Attempt: fallback", maxsplit=1)[1]
+        self.assertIn("-c:v libx264", fallback_log)
+        self.assertIn("-crf 23", fallback_log)
+        self.assertNotIn("-cq 23", fallback_log)
+        self.assertNotIn("-preset p5", fallback_log)
+
+    @unittest.skipUnless(
+        FFmpegProcessor.resolve_ffmpeg_path() is not None,
+        "FFmpeg not available",
+    )
+    def test_real_ffmpeg_smoke_blur_bottom_right_selection(self):
+        processor = FFmpegProcessor()
+        selection = NormalizedSelection(
+            x_percent=92.7777778,
+            y_percent=97.3958333,
+            width_percent=6.2962963,
+            height_percent=2.0833333,
+        )
+        encoder_plan = EncoderPlan(
+            primary_encoder=ENCODER_LIBX264,
+            fallback_encoder=None,
+            requested_option="CPU - libx264",
+        )
+
+        with TemporaryDirectory() as temp_dir:
+            temp_dir_path = Path(temp_dir)
+            input_path = temp_dir_path / "synthetic.mp4"
+            synth_command = [
+                processor.ffmpeg_path,
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=blue:s=1080x1920:d=1",
+                "-f",
+                "lavfi",
+                "-i",
+                "anullsrc=r=48000:cl=stereo",
+                "-shortest",
+                "-c:v",
+                ENCODER_LIBX264,
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                str(input_path),
+            ]
+            synth_result = processor.run_command(synth_command)
+            self.assertEqual(synth_result.returncode, 0, synth_result.stderr)
+
+            smoke_video_info = VideoInfo(
+                file_path=str(input_path),
+                file_name=input_path.name,
+                width=1080,
+                height=1920,
+                fps=25.0,
+                frame_count=25,
+                duration_seconds=1.0,
+            )
+            export_result = processor.export_recipe_video(
+                video_info=smoke_video_info,
+                output_directory=temp_dir_path,
+                encoder_plan=encoder_plan,
+                area_cleanup_type="Blur selected area",
+                selection=selection,
+                blur_strength=20,
+            )
+
+            self.assertTrue(export_result.success, export_result.log_text)
+            self.assertTrue(export_result.output_path.exists())
 
     def test_quality_mapping_for_libx264_profiles(self):
         self.assertEqual(

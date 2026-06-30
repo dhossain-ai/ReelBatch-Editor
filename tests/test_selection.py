@@ -9,6 +9,7 @@ from core.selection import (
     display_rect_from_normalized_selection,
     fit_rect_within_bounds,
     normalized_selection_from_display_rect,
+    normalized_selection_to_pixel_rect,
     rect_from_drag,
 )
 
@@ -86,6 +87,23 @@ class SelectionMathTests(unittest.TestCase):
 
         self.assertEqual(clamp_point_to_rect(90.0, 40.0, image_rect), (100.0, 50.0))
         self.assertEqual(clamp_point_to_rect(320.0, 500.0, image_rect), (300.0, 450.0))
+
+    def test_selection_touching_right_and_bottom_edge_stays_inside_video_bounds(self):
+        selection = NormalizedSelection(
+            x_percent=99.0,
+            y_percent=99.0,
+            width_percent=1.0,
+            height_percent=1.0,
+        )
+
+        pixel_rect = normalized_selection_to_pixel_rect(selection, 1080, 1920)
+
+        self.assertGreaterEqual(pixel_rect.x, 0)
+        self.assertGreaterEqual(pixel_rect.y, 0)
+        self.assertGreaterEqual(pixel_rect.width, 2)
+        self.assertGreaterEqual(pixel_rect.height, 2)
+        self.assertLessEqual(pixel_rect.x + pixel_rect.width, 1080)
+        self.assertLessEqual(pixel_rect.y + pixel_rect.height, 1920)
 
 
 if __name__ == "__main__":

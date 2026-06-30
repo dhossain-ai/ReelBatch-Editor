@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from shutil import which
-from subprocess import CompletedProcess, run
+from subprocess import CompletedProcess, list2cmdline, run
 from typing import Callable, Optional, Sequence
 
 from core.export_recipe import AREA_CLEANUP_TYPE_BLUR, AREA_CLEANUP_TYPE_LOGO
@@ -326,6 +326,7 @@ class FFmpegProcessor:
         zoom_percent: Optional[int] = None,
         output_quality: str = OUTPUT_QUALITY_BALANCED,
         output_standardization: Optional[OutputStandardization] = None,
+        pixel_rect: Optional[PixelSelection] = None,
     ) -> list[str]:
         """Build an FFmpeg command for the full export recipe pipeline."""
         input_file = Path(input_path)
@@ -341,6 +342,7 @@ class FFmpegProcessor:
             blur_strength=blur_strength,
             zoom_percent=zoom_percent,
             output_standardization=output_standardization,
+            pixel_rect=pixel_rect,
         )
 
         command = [
@@ -454,10 +456,37 @@ class FFmpegProcessor:
                 output_standardization=output_standardization,
             ),
         )
+        pixel_rect: Optional[PixelSelection] = None
+        if area_cleanup_type is not None:
+            if selection is None:
+                raise ValueError("Area cleanup requires a valid selection.")
+            pixel_rect = normalized_selection_to_pixel_rect(
+                selection,
+                video_info.width,
+                video_info.height,
+            )
+
+        base_debug_log = build_export_debug_log_header(
+            input_path=video_info.file_path,
+            output_path=output_path,
+            recipe_state=build_recipe_state_description(
+                area_cleanup_type=area_cleanup_type,
+                blur_strength=blur_strength,
+                zoom_percent=zoom_percent,
+                overlay_image_path=overlay_image_path,
+                output_standardization=output_standardization,
+            ),
+            video_width=video_info.width,
+            video_height=video_info.height,
+            selection=selection,
+            pixel_rect=pixel_rect,
+            output_standardization=output_standardization,
+        )
         return self._export_video_with_retry(
             video_info=video_info,
             output_path=output_path,
             encoder_plan=encoder_plan,
+            base_debug_log=base_debug_log,
             command_builder=lambda encoder: self.build_recipe_command(
                 input_path=video_info.file_path,
                 output_path=output_path,
@@ -471,6 +500,7 @@ class FFmpegProcessor:
                 zoom_percent=zoom_percent,
                 output_quality=output_quality,
                 output_standardization=output_standardization,
+                pixel_rect=pixel_rect,
             ),
         )
 
@@ -479,6 +509,7 @@ class FFmpegProcessor:
         video_info: VideoInfo,
         output_path: Path,
         encoder_plan: EncoderPlan,
+        base_debug_log: str,
         command_builder: Callable[[str], list[str]],
     ) -> ExportResult:
         primary_result = self._run_export_attempt(
@@ -486,6 +517,8 @@ class FFmpegProcessor:
             output_path=output_path,
             encoder=encoder_plan.primary_encoder,
             command=command_builder(encoder_plan.primary_encoder),
+            attempt_label="primary",
+            base_debug_log=base_debug_log,
         )
         if primary_result.success:
             return primary_result
@@ -496,6 +529,8 @@ class FFmpegProcessor:
                 output_path=output_path,
                 encoder=encoder_plan.fallback_encoder,
                 command=command_builder(encoder_plan.fallback_encoder),
+                attempt_label="fallback",
+                base_debug_log=base_debug_log,
                 prior_log_text=primary_result.log_text,
             )
             return ExportResult(
@@ -516,10 +551,21 @@ class FFmpegProcessor:
         output_path: Path,
         encoder: str,
         command: Sequence[str],
+        attempt_label: str,
+        base_debug_log: str,
         prior_log_text: str = "",
     ) -> ExportResult:
         completed = self.run_command(command)
-        combined_log = join_log_text(prior_log_text, completed.stdout, completed.stderr)
+        attempt_log = build_ffmpeg_attempt_log(
+            base_debug_log=base_debug_log,
+            attempt_label=attempt_label,
+            encoder=encoder,
+            command=command,
+            returncode=completed.returncode,
+            stdout=completed.stdout,
+            stderr=completed.stderr,
+        )
+        combined_log = join_log_text(prior_log_text, attempt_log)
         success = completed.returncode == 0
         error_message = None if success else f"FFmpeg exited with code {completed.returncode}."
         return ExportResult(
@@ -586,6 +632,146 @@ def get_encoder_quality_arguments(encoder: str, output_quality: str) -> list[str
     return list(encoder_profiles[output_quality])
 
 
+def build_recipe_state_description(
+    area_cleanup_type: Optional[str],
+    blur_strength: int,
+    zoom_percent: Optional[int],
+    overlay_image_path: Optional[Path | str],
+    output_standardization: Optional[OutputStandardization],
+) -> str:
+    """Build a compact recipe-state description for export diagnostics."""
+    parts: list[str] = []
+    if area_cleanup_type == AREA_CLEANUP_TYPE_BLUR:
+        parts.append(f"area_cleanup=blur(radius={max(1, int(blur_strength))})")
+    elif area_cleanup_type == AREA_CLEANUP_TYPE_LOGO:
+        parts.append(
+            "area_cleanup=logo"
+            f"(overlay={Path(overlay_image_path).name if overlay_image_path is not None else 'missing'})"
+        )
+    else:
+        parts.append("area_cleanup=off")
+
+    if zoom_percent is not None:
+        parts.append(f"zoom={int(zoom_percent)}%")
+    else:
+        parts.append("zoom=off")
+
+    if output_standardization is None:
+        parts.append("output=keep_original")
+    else:
+        parts.append(
+            "output="
+            f"{output_standardization.target_width}x{output_standardization.target_height}"
+            f" ({output_standardization.resize_mode})"
+        )
+
+    return ", ".join(parts)
+
+
+def build_export_debug_log_header(
+    input_path: Path | str,
+    output_path: Path | str,
+    recipe_state: str,
+    video_width: int,
+    video_height: int,
+    selection: Optional[NormalizedSelection],
+    pixel_rect: Optional[PixelSelection],
+    output_standardization: Optional[OutputStandardization],
+) -> str:
+    """Build the shared diagnostic header that should appear for every FFmpeg attempt."""
+    return "\n".join(
+        [
+            f"Input path: {input_path}",
+            f"Output path: {output_path}",
+            f"Recipe state: {recipe_state}",
+            f"Input video size: {video_width}x{video_height}",
+            f"Normalized selection: {format_normalized_selection(selection)}",
+            f"Pixel crop rectangle: {format_pixel_rect(pixel_rect)}",
+            f"Output resolution settings: {describe_output_standardization(output_standardization)}",
+        ]
+    )
+
+
+def build_ffmpeg_attempt_log(
+    base_debug_log: str,
+    attempt_label: str,
+    encoder: str,
+    command: Sequence[str],
+    returncode: int,
+    stdout: str,
+    stderr: str,
+) -> str:
+    """Build a detailed diagnostic log for one FFmpeg attempt."""
+    lines = [
+        base_debug_log,
+        f"Attempt: {attempt_label}",
+        f"Encoder selected: {encoder}",
+        f"FFmpeg command: {list2cmdline(list(command))}",
+        f"FFmpeg return code: {returncode}",
+        "FFmpeg stdout:",
+        stdout.strip() or "<empty>",
+        "FFmpeg stderr:",
+        stderr.strip() or "<empty>",
+    ]
+    return "\n".join(lines)
+
+
+def format_normalized_selection(selection: Optional[NormalizedSelection]) -> str:
+    """Format normalized selection values for readable export logs."""
+    if selection is None:
+        return "none"
+
+    normalized = selection.clamped()
+    return (
+        f"x_percent={normalized.x_percent:.6f}, "
+        f"y_percent={normalized.y_percent:.6f}, "
+        f"width_percent={normalized.width_percent:.6f}, "
+        f"height_percent={normalized.height_percent:.6f}"
+    )
+
+
+def format_pixel_rect(pixel_rect: Optional[PixelSelection]) -> str:
+    """Format a pixel crop rectangle for readable export logs."""
+    if pixel_rect is None:
+        return "none"
+    return (
+        f"x={pixel_rect.x}, y={pixel_rect.y}, "
+        f"width={pixel_rect.width}, height={pixel_rect.height}"
+    )
+
+
+def describe_output_standardization(
+    output_standardization: Optional[OutputStandardization],
+) -> str:
+    """Describe output-size settings in a compact log-friendly format."""
+    if output_standardization is None:
+        return "Keep original"
+    return (
+        f"{output_standardization.target_width}x{output_standardization.target_height}"
+        f" ({output_standardization.resize_mode})"
+    )
+
+
+def build_safe_boxblur_expression(pixel_rect: PixelSelection, blur_strength: int) -> str:
+    """Build a boxblur expression that stays valid for tiny watermark crops."""
+    requested_radius = max(1, int(blur_strength))
+    luma_radius = min(requested_radius, max_boxblur_radius(pixel_rect.width, pixel_rect.height))
+    chroma_radius = min(
+        requested_radius,
+        max_boxblur_radius(max(pixel_rect.width // 2, 1), max(pixel_rect.height // 2, 1)),
+    )
+    return (
+        "boxblur="
+        f"luma_radius={luma_radius}:luma_power=1:"
+        f"chroma_radius={chroma_radius}:chroma_power=1"
+    )
+
+
+def max_boxblur_radius(width: int, height: int) -> int:
+    """Return the largest valid boxblur radius for a plane of the given size."""
+    return max(0, (min(int(width), int(height)) - 1) // 2)
+
+
 def build_blur_filter(pixel_rect: PixelSelection, blur_strength: int) -> str:
     """Build the FFmpeg filter_complex string for the blur overlay pipeline."""
     return build_blur_filter_step("[0:v]", "[outv]", pixel_rect, blur_strength)
@@ -598,11 +784,11 @@ def build_blur_filter_step(
     blur_strength: int,
 ) -> str:
     """Build one blur step within a larger filter graph."""
-    radius = max(1, int(blur_strength))
+    blur_expression = build_safe_boxblur_expression(pixel_rect, blur_strength)
     return (
         f"{input_label}split[base][tmp];"
         f"[tmp]crop=w={pixel_rect.width}:h={pixel_rect.height}:x={pixel_rect.x}:y={pixel_rect.y},"
-        f"boxblur={radius}:1[blurred];"
+        f"{blur_expression}[blurred];"
         f"[base][blurred]overlay=x={pixel_rect.x}:y={pixel_rect.y}{output_label}"
     )
 
@@ -703,6 +889,7 @@ def build_recipe_filter(
     blur_strength: int = 10,
     zoom_percent: Optional[int] = None,
     output_standardization: Optional[OutputStandardization] = None,
+    pixel_rect: Optional[PixelSelection] = None,
 ) -> str:
     """Build the ordered multi-effect filter graph for one export recipe."""
     steps: list[str] = []
@@ -713,11 +900,12 @@ def build_recipe_filter(
     if area_cleanup_type is not None:
         if selection is None:
             raise ValueError("Area cleanup requires a valid selection.")
-        pixel_rect = normalized_selection_to_pixel_rect(selection, video_width, video_height)
+        if pixel_rect is None:
+            pixel_rect = normalized_selection_to_pixel_rect(selection, video_width, video_height)
         if has_zoom:
-            next_label = "[cleanupv]"
+            next_label = "[cleaned]"
         elif has_output_standardization:
-            next_label = "[preoutv]"
+            next_label = "[cleaned]"
         else:
             next_label = "[outv]"
         if area_cleanup_type == AREA_CLEANUP_TYPE_BLUR:
@@ -729,7 +917,7 @@ def build_recipe_filter(
         current_label = next_label
 
     if has_zoom:
-        next_label = "[preoutv]" if has_output_standardization else "[outv]"
+        next_label = "[zoomed]" if has_output_standardization else "[outv]"
         steps.append(
             build_zoom_crop_filter_step(
                 current_label,

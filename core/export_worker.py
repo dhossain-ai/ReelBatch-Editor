@@ -15,9 +15,15 @@ from core.export_recipe import (
     build_recipe_summary,
 )
 from core.export_logging import ExportLogWriter, extract_ffmpeg_error_snippet
-from core.ffmpeg_processor import EncoderPlan, ExportResult, FFmpegProcessor
+from core.ffmpeg_processor import (
+    EncoderPlan,
+    ExportResult,
+    FFmpegProcessor,
+    describe_output_standardization,
+    format_normalized_selection,
+)
 from core.output_resolution import OutputStandardization
-from core.selection import NormalizedSelection
+from core.selection import NormalizedSelection, normalized_selection_to_pixel_rect
 from core.video_probe import VideoInfo
 
 
@@ -239,6 +245,28 @@ class ExportWorker(QObject):
         area_cleanup_type: Optional[str] = None
         if self._settings.area_cleanup_enabled:
             area_cleanup_type = self._settings.cleanup_type
+            if self._settings.selection is not None:
+                crop_rect = normalized_selection_to_pixel_rect(
+                    self._settings.selection,
+                    video_info.width,
+                    video_info.height,
+                )
+                self._log_writer.write_line(
+                    "Resolved crop rectangle"
+                    f" | input={video_info.file_path}"
+                    f" | video_size={video_info.width}x{video_info.height}"
+                    f" | x={crop_rect.x}"
+                    f" | y={crop_rect.y}"
+                    f" | width={crop_rect.width}"
+                    f" | height={crop_rect.height}"
+                )
+                self._log_writer.write_line(
+                    "Selection context"
+                    f" | input={video_info.file_path}"
+                    f" | normalized_selection={format_normalized_selection(self._settings.selection)}"
+                    f" | output_resolution={describe_output_standardization(self._settings.output_standardization)}"
+                    f" | encoder_request={self._encoder_plan.requested_option}"
+                )
 
         zoom_percent: Optional[int] = None
         if self._settings.zoom_enabled:
@@ -270,6 +298,8 @@ class ExportWorker(QObject):
         if result.error_message:
             message += f" | error={result.error_message}"
         self._log_writer.write_line(message)
+        if result.log_text:
+            self._log_writer.write_line(f"FFmpeg diagnostic log follows:\n{result.log_text}")
 
         if result.fallback_used:
             self._log_writer.write_line(
